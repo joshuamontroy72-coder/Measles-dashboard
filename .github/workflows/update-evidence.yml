@@ -1,1 +1,44 @@
+name: Update measles evidence dashboard
 
+on:
+  schedule:
+    - cron: "15 10 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-evidence:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Harvest evidence
+        run: npm run update:evidence
+        env:
+          NCBI_EMAIL: ${{ vars.NCBI_EMAIL }}
+          EVIDENCE_LOOKBACK_DAYS: "90"
+          MAX_EVIDENCE_ITEMS: "2000"
+
+      - name: Commit updated evidence data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/data/evidence.json
+          if git diff --cached --quiet; then
+            echo "No evidence changes to commit."
+          else
+            git commit -m "chore: update measles evidence data"
+            git push
+          fi

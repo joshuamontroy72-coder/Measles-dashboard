@@ -120,16 +120,21 @@ export default function Dashboard({ data }: { data: EvidenceData }) {
     });
   }, [items, topic, sourceType, jurisdiction, query]);
 
-  const stats = useMemo(() => {
-    return {
-      total: items.length,
-      pregnancy: items.filter((i) => i.topic === "pregnancy").length,
-      interval: items.filter((i) => i.topic === "interval").length,
-      guidance: items.filter((i) => i.sourceType === "guidance").length,
-      recent: items.filter((i) => daysSince(i.date) <= 14).length,
-      canada: items.filter((i) => i.jurisdiction === "Canada").length
-    };
-  }, [items]);
+const stats = useMemo(() => {
+  return {
+    total: items.length,
+    pregnancy: items.filter((i) => i.topic === "pregnancy").length,
+    interval: items.filter((i) => i.topic === "interval").length,
+    guidance: items.filter((i) => i.sourceType === "guidance").length,
+    changedGuidance: items.filter(
+      (i) =>
+        i.sourceType === "guidance" &&
+        i.updateStatus === "changed_since_last_refresh"
+    ).length,
+    recent: items.filter((i) => daysSince(i.date) <= 14).length,
+    canada: items.filter((i) => i.jurisdiction === "Canada").length
+  };
+}, [items]);
 
   return (
     <main>

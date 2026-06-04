@@ -5,150 +5,133 @@ import { createHash } from "node:crypto";
 
 const OUTFILE = new URL("../public/data/evidence.json", import.meta.url);
 const LOOKBACK_DAYS = Number(process.env.EVIDENCE_LOOKBACK_DAYS || 90);
-const MAX_ITEMS = Number(process.env.MAX_EVIDENCE_ITEMS || 2000);
+const MAX_ITEMS = Number(process.env.MAX_EVIDENCE_ITEMS || 2500);
 const NCBI_EMAIL = process.env.NCBI_EMAIL || "";
 const NOW = new Date();
 const TOOL_NAME = "measles-evidence-dashboard";
 
 const TOPICS = {
-  pregnancy: {
-    label: "Measles in pregnancy / pre- or post-exposure management",
+  general: {
+    label: "All measles intelligence",
     pubmed: [
-      '("measles"[Title/Abstract] OR "morbilli"[Title/Abstract]) AND (pregnan*[Title/Abstract] OR maternal[Title/Abstract] OR fetus[Title/Abstract] OR fetal[Title/Abstract] OR foetal[Title/Abstract] OR obstetric*[Title/Abstract] OR neonatal[Title/Abstract] OR congenital[Title/Abstract] OR "post-exposure prophylaxis"[Title/Abstract] OR immunoglobulin[Title/Abstract] OR "immune globulin"[Title/Abstract] OR "MMR"[Title/Abstract])'
+      '("measles"[Title/Abstract] OR "morbilli"[Title/Abstract] OR "MMR"[Title/Abstract] OR "MMRV"[Title/Abstract] OR "measles vaccine"[Title/Abstract])'
     ],
     europepmc: [
-      '(TITLE_ABS:measles OR TITLE_ABS:morbilli) AND (TITLE_ABS:pregnan* OR TITLE_ABS:maternal OR TITLE_ABS:fetal OR TITLE_ABS:foetal OR TITLE_ABS:obstetric* OR TITLE_ABS:neonatal OR TITLE_ABS:congenital OR TITLE_ABS:"immune globulin" OR TITLE_ABS:immunoglobulin OR TITLE_ABS:"post-exposure prophylaxis" OR TITLE_ABS:MMR)'
+      '(TITLE_ABS:measles OR TITLE_ABS:morbilli OR TITLE_ABS:MMR OR TITLE_ABS:MMRV OR TITLE_ABS:"measles vaccine")'
     ],
     news: [
-      'measles (pregnancy OR pregnant OR maternal OR fetus OR fetal OR foetal OR obstetric)',
+      'measles outbreak OR measles cases OR MMR vaccine OR measles surveillance',
+      'measles vaccine OR MMR OR MMRV',
+      'measles misinformation OR vitamin A measles OR cod liver oil measles'
+    ]
+  },
+  pregnancy: {
+    label: "Pregnancy / exposure management",
+    pubmed: [
+      '("measles"[Title/Abstract] OR "morbilli"[Title/Abstract] OR "MMR"[Title/Abstract]) AND (pregnan*[Title/Abstract] OR maternal[Title/Abstract] OR fetus[Title/Abstract] OR fetal[Title/Abstract] OR foetal[Title/Abstract] OR obstetric*[Title/Abstract] OR neonatal[Title/Abstract] OR congenital[Title/Abstract] OR "post-exposure prophylaxis"[Title/Abstract] OR immunoglobulin[Title/Abstract] OR "immune globulin"[Title/Abstract])'
+    ],
+    europepmc: [
+      '(TITLE_ABS:measles OR TITLE_ABS:morbilli OR TITLE_ABS:MMR) AND (TITLE_ABS:pregnan* OR TITLE_ABS:maternal OR TITLE_ABS:fetal OR TITLE_ABS:foetal OR TITLE_ABS:obstetric* OR TITLE_ABS:neonatal OR TITLE_ABS:congenital OR TITLE_ABS:"immune globulin" OR TITLE_ABS:immunoglobulin OR TITLE_ABS:"post-exposure prophylaxis")'
+    ],
+    news: [
+      'measles pregnant OR measles pregnancy OR measles maternal',
       'measles pregnant women outbreak',
       'MMR pregnancy measles outbreak'
-    ],
-    include: [
-      /measles|morbilli|MMR/i,
-      /pregnan|maternal|fetal|foetal|fetus|foetus|obstetric|neonatal|congenital|immunoglobulin|immune globulin|post.?exposure/i
     ]
   },
   interval: {
-    label: "Interval between first and second measles-containing vaccine doses",
+    label: "Dose interval / accelerated schedule",
     pubmed: [
-      '("measles vaccine"[Title/Abstract] OR "measles-mumps-rubella vaccine"[Title/Abstract] OR MMR[Title/Abstract] OR MMRV[Title/Abstract]) AND ("second dose"[Title/Abstract] OR interval[Title/Abstract] OR schedule[Title/Abstract] OR accelerated[Title/Abstract] OR "dose spacing"[Title/Abstract] OR "28 days"[Title/Abstract] OR "4 weeks"[Title/Abstract] OR "school entry"[Title/Abstract] OR immunogenicity[Title/Abstract] OR effectiveness[Title/Abstract])'
+      '("measles vaccine"[Title/Abstract] OR "measles-mumps-rubella vaccine"[Title/Abstract] OR MMR[Title/Abstract] OR MMRV[Title/Abstract]) AND ("second dose"[Title/Abstract] OR interval[Title/Abstract] OR schedule[Title/Abstract] OR accelerated[Title/Abstract] OR "dose spacing"[Title/Abstract] OR "28 days"[Title/Abstract] OR "4 weeks"[Title/Abstract] OR immunogenicity[Title/Abstract] OR effectiveness[Title/Abstract])'
     ],
     europepmc: [
       '(TITLE_ABS:"measles vaccine" OR TITLE_ABS:"measles-mumps-rubella vaccine" OR TITLE_ABS:MMR OR TITLE_ABS:MMRV) AND (TITLE_ABS:"second dose" OR TITLE_ABS:interval OR TITLE_ABS:schedule OR TITLE_ABS:accelerated OR TITLE_ABS:"dose spacing" OR TITLE_ABS:"28 days" OR TITLE_ABS:"4 weeks" OR TITLE_ABS:immunogenicity OR TITLE_ABS:effectiveness)'
     ],
     news: [
-      'measles vaccine "second dose" interval',
+      'measles vaccine second dose interval',
       'MMR second dose early outbreak',
       'measles vaccine accelerated schedule'
-    ],
-    include: [
-      /measles|MMR|MMRV/i,
-      /second dose|interval|schedule|accelerated|dose spacing|28 days|4 weeks|immunogenicity|effectiveness|school entry|minimum interval|early second/i
     ]
   }
 };
+
+const CURATED_NEWS_SOURCES = [
+  { name: "CBC Health", jurisdiction: "Canada", type: "rss", url: "https://www.cbc.ca/webfeed/rss/rss-health" },
+  { name: "CBC Canada", jurisdiction: "Canada", type: "rss", url: "https://www.cbc.ca/webfeed/rss/rss-canada" },
+  { name: "CIDRAP Measles", jurisdiction: "International", type: "html", url: "https://www.cidrap.umn.edu/measles" },
+  { name: "STAT Health", jurisdiction: "United States", type: "rss", url: "https://www.statnews.com/feed/" },
+  { name: "WHO Disease Outbreak News", jurisdiction: "Global", type: "html", url: "https://www.who.int/emergencies/disease-outbreak-news" },
+  { name: "PAHO Epidemiological Alerts", jurisdiction: "Americas", type: "html", url: "https://www.paho.org/en/epidemiological-alerts-and-updates" },
+  { name: "ECDC Measles", jurisdiction: "Europe", type: "html", url: "https://www.ecdc.europa.eu/en/measles" },
+  { name: "ECDC Measles Surveillance", jurisdiction: "Europe", type: "html", url: "https://www.ecdc.europa.eu/en/measles/surveillance-and-disease-data" },
+  { name: "CDC Measles Cases and Outbreaks", jurisdiction: "United States", type: "html", url: "https://www.cdc.gov/measles/data-research/index.html" },
+  { name: "CDC MMWR", jurisdiction: "United States", type: "html", url: "https://www.cdc.gov/mmwr/index.html" },
+  { name: "PHAC Measles and Rubella Monitoring", jurisdiction: "Canada", type: "html", url: "https://health-infobase.canada.ca/measles-rubella/" }
+];
+
+const CANADIAN_PUBLIC_HEALTH_SOURCES = [
+  { name: "PHAC Measles and Rubella Monitoring", jurisdiction: "Canada", url: "https://health-infobase.canada.ca/measles-rubella/" },
+  { name: "Canada.ca Measles", jurisdiction: "Canada", url: "https://www.canada.ca/en/public-health/services/diseases/measles.html" },
+  { name: "Public Health Ontario Measles", jurisdiction: "Ontario, Canada", url: "https://www.publichealthontario.ca/en/Diseases-and-Conditions/Infectious-Diseases/Vaccine-Preventable-Diseases/Measles" },
+  { name: "Ontario Measles", jurisdiction: "Ontario, Canada", url: "https://www.ontario.ca/page/measles" },
+  { name: "Quebec Measles", jurisdiction: "Quebec, Canada", url: "https://www.quebec.ca/en/health/health-issues/a-z/measles" },
+  { name: "Alberta Measles", jurisdiction: "Alberta, Canada", url: "https://www.alberta.ca/measles" },
+  { name: "Alberta Health Services Measles", jurisdiction: "Alberta, Canada", url: "https://www.albertahealthservices.ca/topics/Page17271.aspx" },
+  { name: "BCCDC Measles", jurisdiction: "British Columbia, Canada", url: "https://www.bccdc.ca/health-info/diseases-conditions/measles" },
+  { name: "Manitoba Measles", jurisdiction: "Manitoba, Canada", url: "https://www.gov.mb.ca/health/publichealth/diseases/measles.html" },
+  { name: "Saskatchewan Immunization Services", jurisdiction: "Saskatchewan, Canada", url: "https://www.saskatchewan.ca/residents/health/accessing-health-care-services/immunization-services" },
+  { name: "Nova Scotia Immunization", jurisdiction: "Nova Scotia, Canada", url: "https://novascotia.ca/dhw/cdpc/immunization.asp" },
+  { name: "New Brunswick Immunization", jurisdiction: "New Brunswick, Canada", url: "https://www.gnb.ca/en/topic/health-wellness/immunization-vaccination.html" },
+  { name: "PEI Immunization", jurisdiction: "Prince Edward Island, Canada", url: "https://www.princeedwardisland.ca/en/topic/immunization" },
+  { name: "Newfoundland and Labrador Immunization", jurisdiction: "Newfoundland and Labrador, Canada", url: "https://www.gov.nl.ca/hcs/publichealth/cdc/immunizations/" },
+  { name: "Yukon Immunization", jurisdiction: "Yukon, Canada", url: "https://yukonimmunization.ca/" },
+  { name: "Northwest Territories Immunization", jurisdiction: "Northwest Territories, Canada", url: "https://www.hss.gov.nt.ca/en/services/immunization" },
+  { name: "Nunavut Immunization", jurisdiction: "Nunavut, Canada", url: "https://www.gov.nu.ca/health" }
+];
+
+const GDELT_PRIORITY_DOMAINS = [
+  "cbc.ca",
+  "cidrap.umn.edu",
+  "statnews.com",
+  "reuters.com",
+  "who.int",
+  "paho.org",
+  "ecdc.europa.eu",
+  "cdc.gov",
+  "canada.ca",
+  "publichealthontario.ca",
+  "ontario.ca",
+  "quebec.ca",
+  "alberta.ca",
+  "albertahealthservices.ca",
+  "bccdc.ca",
+  "gov.mb.ca",
+  "saskatchewan.ca",
+  "novascotia.ca",
+  "gnb.ca",
+  "princeedwardisland.ca",
+  "gov.nl.ca",
+  "yukonimmunization.ca",
+  "hss.gov.nt.ca",
+  "gov.nu.ca",
+  "gov.uk"
+];
 
 const DEFAULT_GUIDANCE_LINK_PATTERNS = [
   /measles|morbilli|masern|rougeole|MMR|MMRV|ROR/i,
   /vaccine|vaccination|immuni[sz]ation|impfung|calendrier|schedule|recommendation|statement|guidance|guideline/i
 ];
 
-const NITAG_WATCH_SOURCES = [
-  {
-    name: "STIKO Germany — Standing Committee on Vaccination recommendations",
-    jurisdiction: "Germany",
-    topic: "interval",
-    sourceScope: "NITAG recommendation watch",
-    url: "https://www.rki.de/EN/Topics/Infectious-diseases/Immunisation/STIKO/STIKO-recommendations/Downloads/STIKO_Recommendations.pdf?__blob=publicationFile&v=1",
-    followLinks: false,
-    why: "Monitors STIKO recommendations for changes to measles/MMR schedules, catch-up recommendations, and minimum-dose interval guidance."
-  },
-  {
-    name: "HAS France — Vaccination topic page",
-    jurisdiction: "France",
-    topic: "interval",
-    sourceScope: "NITAG recommendation watch",
-    url: "https://www.has-sante.fr/jcms/c_2742985/fr/vaccination",
-    followLinks: true,
-    linkPatterns: [/rougeole|ROR|vaccination|calendrier|recommandation/i],
-    why: "Monitors HAS vaccination recommendation activity, including measles/ROR-related recommendation updates."
-  },
-  {
-    name: "HAS France — Commission technique des vaccinations",
-    jurisdiction: "France",
-    topic: "interval",
-    sourceScope: "NITAG recommendation watch",
-    url: "https://www.has-sante.fr/jcms/c_2755844/fr/commission-technique-des-vaccinations-ctv",
-    followLinks: true,
-    linkPatterns: [/rougeole|ROR|vaccination|calendrier|recommandation|avis/i],
-    why: "Monitors the French technical vaccination commission page for new or changed recommendation documents."
-  },
-  {
-    name: "France Ministry of Health — Vaccination calendar",
-    jurisdiction: "France",
-    topic: "interval",
-    sourceScope: "National schedule watch",
-    url: "https://sante.gouv.fr/prevention-en-sante/preserver-sa-sante/vaccination/calendrier-vaccinal",
-    followLinks: true,
-    linkPatterns: [/rougeole|ROR|calendrier|vaccinal|vaccination/i],
-    why: "Monitors the French national vaccination calendar for changes to ROR timing and catch-up recommendations."
-  },
-  {
-    name: "HAS France — Measles vaccination before 12 months recommendation",
-    jurisdiction: "France",
-    topic: "interval",
-    sourceScope: "NITAG recommendation watch",
-    url: "https://www.has-sante.fr/upload/docs/application/pdf/2018-04/recommandation___vaccination_contre_la_rougeole_avant_lage_de_12_mois_suite_a_larret_de_commercialisation_du_vaccin_monovale.pdf",
-    followLinks: false,
-    why: "Monitors HAS recommendation content relevant to measles vaccination before 12 months in travel or post-exposure settings."
-  },
-  {
-    name: "NIAC Ireland — Immunisation Guidelines for Ireland",
-    jurisdiction: "Ireland",
-    topic: "interval",
-    sourceScope: "NITAG recommendation watch",
-    url: "https://www.hiqa.ie/areas-we-work/national-immunisation-advisory-committee/immunisation-guidelines-ireland",
-    followLinks: true,
-    linkPatterns: [/measles|MMR|mumps|rubella|immunisation|guidelines|recommendations/i],
-    why: "Monitors NIAC guideline landing page for new or changed immunisation guidance."
-  },
-  {
-    name: "NIAC Ireland — Chapter 12 Measles",
-    jurisdiction: "Ireland",
-    topic: "interval",
-    sourceScope: "NITAG recommendation watch",
-    url: "https://www.hiqa.ie/sites/default/files/NIAC/Immunisation_Guidelines/Chapter_12_Measles.pdf",
-    followLinks: false,
-    why: "Monitors NIAC measles chapter for changes to MMR schedule, catch-up, travel, and outbreak recommendations."
-  },
-  {
-    name: "NIAC Ireland — Chapter 2 General Immunisation Procedures",
-    jurisdiction: "Ireland",
-    topic: "interval",
-    sourceScope: "NITAG recommendation watch",
-    url: "https://www.hiqa.ie/sites/default/files/NIAC/Immunisation_Guidelines/Chapter_02_General_Immunisation_Procedures.pdf",
-    followLinks: false,
-    why: "Monitors NIAC general immunisation procedures, including spacing and timing principles relevant to dose interval questions."
-  },
+const GUIDANCE_WATCH_SOURCES = [
   {
     name: "NACI Canada — Statements and publications page",
     jurisdiction: "Canada",
-    topic: "interval",
+    topic: "general",
     sourceScope: "NITAG recommendation watch",
     url: "https://www.canada.ca/en/public-health/services/immunization/national-advisory-committee-on-immunization-naci.html",
     followLinks: true,
     linkPatterns: [/measles|rubella|mumps|MMR|MMRV|post-exposure|prophylaxis|vaccin/i],
-    why: "Monitors the NACI statements page for new or changed measles/MMR recommendation documents."
-  },
-  {
-    name: "NACI Canada — Updated measles post-exposure prophylaxis recommendations",
-    jurisdiction: "Canada",
-    topic: "pregnancy",
-    sourceScope: "NITAG recommendation watch",
-    url: "https://www.canada.ca/en/public-health/services/publications/vaccines-immunization/national-advisory-committee-immunization-summary-updated-recommendations-measles-post-exposure-prophylaxis.html",
-    followLinks: false,
-    why: "Monitors NACI measles PEP recommendations, including relevance to susceptible pregnant contacts and immunoglobulin use."
+    why: "Monitors NACI statements for new or changed measles/MMR recommendation documents."
   },
   {
     name: "Canada — Canadian Immunization Guide measles vaccines",
@@ -160,7 +143,7 @@ const NITAG_WATCH_SOURCES = [
     why: "Monitors the CIG measles vaccine chapter for changes to routine, catch-up, travel, post-exposure, and outbreak recommendations."
   },
   {
-    name: "Canada — Canadian Immunization Guide pregnancy and breastfeeding",
+    name: "Canada — CIG pregnancy and breastfeeding",
     jurisdiction: "Canada",
     topic: "pregnancy",
     sourceScope: "National guidance watch",
@@ -178,6 +161,15 @@ const NITAG_WATCH_SOURCES = [
     why: "Monitors national schedule tables for changes to MMR/MMRV first-dose, second-dose, and minimum-interval guidance."
   },
   {
+    name: "Canada — Provincial and territorial routine schedules",
+    jurisdiction: "Canada",
+    topic: "interval",
+    sourceScope: "Canadian provincial/territorial schedule watch",
+    url: "https://www.canada.ca/en/public-health/services/immunization-vaccines/provincial-territorial-routine-vaccination-programs-infants-children.html",
+    followLinks: false,
+    why: "Monitors PHAC provincial and territorial routine schedule table."
+  },
+  {
     name: "ACIP / CDC Measles vaccine recommendations",
     jurisdiction: "United States",
     topic: "interval",
@@ -185,7 +177,7 @@ const NITAG_WATCH_SOURCES = [
     url: "https://www.cdc.gov/measles/hcp/vaccine-considerations/index.html",
     followLinks: true,
     linkPatterns: [/measles|MMR|MMRV|second dose|schedule|recommendation|ACIP/i],
-    why: "Monitors CDC/ACIP measles vaccine recommendation pages for changes to routine, accelerated, and minimum interval guidance."
+    why: "Monitors CDC/ACIP measles vaccine recommendation pages."
   },
   {
     name: "ACOG Measles outbreak guidance for obstetric patients",
@@ -194,415 +186,97 @@ const NITAG_WATCH_SOURCES = [
     sourceScope: "Clinical guidance watch",
     url: "https://www.acog.org/clinical/clinical-guidance/practice-advisory/articles/2024/03/management-of-obstetric-gynecologic-patients-during-a-measles-outbreak",
     followLinks: false,
-    why: "Monitors obstetric measles outbreak guidance for changes relevant to pregnancy, exposure management, and immune globulin."
+    why: "Monitors obstetric measles outbreak guidance for changes relevant to pregnancy and immune globulin."
+  },
+  {
+    name: "STIKO Germany — Recommendations",
+    jurisdiction: "Germany",
+    topic: "interval",
+    sourceScope: "NITAG recommendation watch",
+    url: "https://www.rki.de/EN/Topics/Infectious-diseases/Immunisation/STIKO/STIKO-recommendations/Downloads/STIKO_Recommendations.pdf?__blob=publicationFile&v=1",
+    followLinks: false,
+    why: "Monitors STIKO recommendations for changes to measles/MMR schedules."
+  },
+  {
+    name: "HAS France — Vaccination topic page",
+    jurisdiction: "France",
+    topic: "general",
+    sourceScope: "NITAG recommendation watch",
+    url: "https://www.has-sante.fr/jcms/c_2742985/fr/vaccination",
+    followLinks: true,
+    linkPatterns: [/rougeole|ROR|vaccination|calendrier|recommandation|avis/i],
+    why: "Monitors HAS vaccination recommendation activity."
+  },
+  {
+    name: "NIAC Ireland — Immunisation Guidelines",
+    jurisdiction: "Ireland",
+    topic: "general",
+    sourceScope: "NITAG recommendation watch",
+    url: "https://www.hiqa.ie/areas-we-work/national-immunisation-advisory-committee/immunisation-guidelines-ireland",
+    followLinks: true,
+    linkPatterns: [/measles|MMR|mumps|rubella|immunisation|guidelines|recommendations/i],
+    why: "Monitors NIAC guideline landing page for new or changed immunisation guidance."
   },
   {
     name: "JCVI United Kingdom — Committee page",
     jurisdiction: "United Kingdom",
-    topic: "interval",
+    topic: "general",
     sourceScope: "NITAG recommendation watch",
     url: "https://www.gov.uk/government/groups/joint-committee-on-vaccination-and-immunisation",
     followLinks: true,
     linkPatterns: [/measles|MMR|MMRV|childhood immunisation|vaccination schedule|JCVI statement/i],
-    why: "Monitors the JCVI page for new statements relevant to MMR/MMRV schedule timing."
-  },
-  {
-    name: "JCVI United Kingdom — Childhood schedule change statement",
-    jurisdiction: "United Kingdom",
-    topic: "interval",
-    sourceScope: "NITAG recommendation watch",
-    url: "https://www.gov.uk/government/publications/changes-to-the-childhood-immunisation-schedule-jcvi-statement/joint-committee-on-vaccination-and-immunisation-jcvi-statement-on-changes-to-the-childhood-immunisation-schedule",
-    followLinks: false,
-    why: "Monitors JCVI statement that includes moving the second MMR dose earlier in the childhood schedule."
+    why: "Monitors JCVI statements relevant to MMR/MMRV schedule timing."
   },
   {
     name: "UK Green Book — Measles chapter",
     jurisdiction: "United Kingdom",
-    topic: "interval",
+    topic: "general",
     sourceScope: "National guidance watch",
     url: "https://www.gov.uk/government/publications/measles-the-green-book-chapter-21",
     followLinks: true,
     linkPatterns: [/measles|green book|MMR|MMRV|chapter 21/i],
-    why: "Monitors UK measles guidance for changes to MMR timing, outbreak response, and post-exposure guidance."
+    why: "Monitors UK measles guidance for changes to MMR timing and post-exposure guidance."
   },
   {
     name: "ATAGI Australia — Statements page",
     jurisdiction: "Australia",
-    topic: "interval",
+    topic: "general",
     sourceScope: "NITAG recommendation watch",
     url: "https://www.health.gov.au/committees-and-groups/atagi/statements?language=en",
     followLinks: true,
     linkPatterns: [/measles|MMR|MMRV|immunisation|annual statement|ATAGI/i],
-    why: "Monitors ATAGI statements for new or changed vaccine policy advice relevant to measles or MMR."
+    why: "Monitors ATAGI statements for measles/MMR policy advice."
   },
   {
-    name: "ATAGI Australia — Committee page",
+    name: "Australia — Immunisation Handbook measles chapter",
     jurisdiction: "Australia",
-    topic: "interval",
-    sourceScope: "NITAG recommendation watch",
-    url: "https://www.health.gov.au/committees-and-groups/atagi?language=en",
-    followLinks: true,
-    linkPatterns: [/measles|MMR|MMRV|statement|immunisation|recommendation/i],
-    why: "Monitors the ATAGI committee page and linked statements for immunisation recommendation changes."
-  },
-  {
-    name: "Australia — Australian Immunisation Handbook measles chapter",
-    jurisdiction: "Australia",
-    topic: "interval",
+    topic: "general",
     sourceScope: "National guidance watch",
     url: "https://immunisationhandbook.health.gov.au/measles",
     followLinks: true,
     linkPatterns: [/measles|MMR|MMRV|recommendations|post-exposure|pregnancy/i],
-    why: "Monitors Australian Handbook measles guidance for changes to routine schedule, early infant doses, travel, and post-exposure guidance."
-  },
-  {
-    name: "Australia — CMO measles vaccination advice referencing ATAGI update",
-    jurisdiction: "Australia",
-    topic: "interval",
-    sourceScope: "NITAG recommendation watch",
-    url: "https://www.health.gov.au/news/chief-medical-officer-professor-michael-kidd-measles-vaccination-advice?language=en",
-    followLinks: false,
-    why: "Monitors Australian Government measles advice reflecting ATAGI update on MMR for infants aged 6 to 11 months before overseas travel."
+    why: "Monitors Australian Handbook measles guidance."
   },
   {
     name: "WHO — SAGE main page",
     jurisdiction: "Global",
-    topic: "interval",
+    topic: "general",
     sourceScope: "SAGE recommendation watch",
     url: "https://www.who.int/groups/strategic-advisory-group-of-experts-on-immunization",
     followLinks: true,
     linkPatterns: [/measles|rubella|MMR|SAGE|meeting|recommendations|position paper/i],
-    why: "Monitors WHO SAGE page for new meeting reports, recommendation updates, and vaccine policy material."
+    why: "Monitors WHO SAGE meeting reports and recommendation updates."
   },
   {
     name: "WHO — Vaccine position papers",
     jurisdiction: "Global",
-    topic: "interval",
+    topic: "general",
     sourceScope: "SAGE / WHO position paper watch",
     url: "https://www.who.int/teams/immunization-vaccines-and-biologicals/policies/position-papers",
     followLinks: true,
     linkPatterns: [/measles|rubella|MMR|position paper|vaccine/i],
-    why: "Monitors WHO vaccine position papers for updates to measles or rubella-containing vaccine recommendations."
-  },
-  {
-    name: "WHO — Measles vaccines position paper",
-    jurisdiction: "Global",
-    topic: "interval",
-    sourceScope: "SAGE / WHO position paper watch",
-    url: "https://www.who.int/publications/i/item/who-wer9217-205-227",
-    followLinks: true,
-    linkPatterns: [/measles|rubella|SAGE|position paper|MCV2|pregnancy/i],
-    why: "Monitors WHO measles vaccine position paper page for recommendation changes related to MCV2, early infant doses, and contraindications."
-  },
-  {
-    name: "WHO — Immunization, Vaccines and Biologicals measles page",
-    jurisdiction: "Global",
-    topic: "interval",
-    sourceScope: "WHO measles guidance watch",
-    url: "https://www.who.int/teams/immunization-vaccines-and-biologicals/diseases/measles",
-    followLinks: true,
-    linkPatterns: [/measles|rubella|position paper|schedule|SAGE|vaccination/i],
-    why: "Monitors WHO measles immunization page and linked guidance documents."
+    why: "Monitors WHO vaccine position papers for measles or rubella-containing vaccine recommendations."
   }
-];
-
-const CANADIAN_PROVINCIAL_SCHEDULE_WATCH_SOURCES = [
-  {
-    name: "Canada — Provincial and territorial routine and catch-up vaccination schedules",
-    jurisdiction: "Canada",
-    topic: "interval",
-    sourceScope: "Canadian provincial/territorial schedule watch",
-    url: "https://www.canada.ca/en/public-health/services/immunization-vaccines/provincial-territorial-routine-vaccination-programs-infants-children.html",
-    followLinks: false,
-    why: "Monitors PHAC summary table comparing provincial and territorial MMR/MMRV timing across Canada."
-  },
-  {
-    name: "Ontario — Routine immunization schedule",
-    jurisdiction: "Ontario, Canada",
-    topic: "interval",
-    sourceScope: "Canadian provincial schedule watch",
-    url: "https://www.ontario.ca/page/ontarios-routine-immunization-schedule",
-    followLinks: true,
-    linkPatterns: [/measles|MMR|MMRV|immunization schedule|publicly funded/i],
-    why: "Monitors Ontario schedule for MMR/MMRV timing and any changes to second-dose timing."
-  },
-  {
-    name: "Quebec — MMR vaccine page",
-    jurisdiction: "Quebec, Canada",
-    topic: "interval",
-    sourceScope: "Canadian provincial schedule watch",
-    url: "https://www.quebec.ca/en/health/advice-and-prevention/vaccination/combined-measles-mumps-rubella-vaccine-mmr",
-    followLinks: true,
-    linkPatterns: [/measles|mumps|rubella|MMR|MMRV|immunization schedule/i],
-    why: "Monitors Quebec MMR/MMRV schedule page for timing and catch-up updates."
-  },
-  {
-    name: "Quebec — Immunization program",
-    jurisdiction: "Quebec, Canada",
-    topic: "interval",
-    sourceScope: "Canadian provincial schedule watch",
-    url: "https://www.quebec.ca/en/health/advice-and-prevention/vaccination/quebec-immunisation-program",
-    followLinks: true,
-    linkPatterns: [/measles|mumps|rubella|MMR|MMRV|schedule|calendrier/i],
-    why: "Monitors Quebec immunization program page for changes to childhood vaccine schedule information."
-  },
-  {
-    name: "Alberta — Routine immunization schedule",
-    jurisdiction: "Alberta, Canada",
-    topic: "interval",
-    sourceScope: "Canadian provincial schedule watch",
-    url: "https://www.alberta.ca/immunization-routine-schedule",
-    followLinks: true,
-    linkPatterns: [/measles|MMR|MMRV|routine schedule|immunization/i],
-    why: "Monitors Alberta schedule page for MMR/MMRV timing changes."
-  },
-  {
-    name: "Alberta Health Services — Routine immunization schedule PDF",
-    jurisdiction: "Alberta, Canada",
-    topic: "interval",
-    sourceScope: "Canadian provincial schedule watch",
-    url: "https://www.albertahealthservices.ca/assets/info/hp/cdc/if-hp-cdc-ipsm-routine-imm-schedule.pdf",
-    followLinks: false,
-    why: "Monitors Alberta schedule PDF for MMR/MMRV schedule changes."
-  },
-  {
-    name: "British Columbia — HealthLinkBC child immunization schedule",
-    jurisdiction: "British Columbia, Canada",
-    topic: "interval",
-    sourceScope: "Canadian provincial schedule watch",
-    url: "https://www.healthlinkbc.ca/health-library/immunizations/schedules/children",
-    followLinks: true,
-    linkPatterns: [/measles|MMR|MMRV|schedule|immunization/i],
-    why: "Monitors BC child immunization schedule for MMR/MMRV dose timing."
-  },
-  {
-    name: "British Columbia — Province immunizations page",
-    jurisdiction: "British Columbia, Canada",
-    topic: "interval",
-    sourceScope: "Canadian provincial schedule watch",
-    url: "https://www2.gov.bc.ca/gov/content/health/managing-your-health/immunizations",
-    followLinks: true,
-    linkPatterns: [/measles|MMR|MMRV|immunization/i],
-    why: "Monitors BC provincial immunization page for measles schedule updates."
-  },
-  {
-    name: "British Columbia — BCCDC MMR biological product page",
-    jurisdiction: "British Columbia, Canada",
-    topic: "interval",
-    sourceScope: "Canadian provincial schedule watch",
-    url: "https://www.bccdc.ca/resource-gallery/Documents/Guidelines%20and%20Forms/Guidelines%20and%20Manuals/Epid/CD%20Manual/Chapter%202%20-%20Imms/Part4/MMR.pdf",
-    followLinks: false,
-    why: "Monitors BCCDC MMR product guidance for indications, schedule, and interval language."
-  },
-  {
-    name: "Manitoba — Routine immunization schedules",
-    jurisdiction: "Manitoba, Canada",
-    topic: "interval",
-    sourceScope: "Canadian provincial schedule watch",
-    url: "https://www.gov.mb.ca/health/publichealth/cdc/div/schedules.html",
-    followLinks: true,
-    linkPatterns: [/measles|MMR|MMRV|schedule|immunization/i],
-    why: "Monitors Manitoba routine schedule for MMR/MMRV timing changes."
-  },
-  {
-    name: "Saskatchewan — When to get immunized",
-    jurisdiction: "Saskatchewan, Canada",
-    topic: "interval",
-    sourceScope: "Canadian provincial schedule watch",
-    url: "https://www.saskatchewan.ca/residents/health/accessing-health-care-services/immunization-services/when-to-get-immunized",
-    followLinks: true,
-    linkPatterns: [/measles|MMR|MMRV|schedule|immunization/i],
-    why: "Monitors Saskatchewan schedule page for MMR/MMRV timing changes."
-  },
-  {
-    name: "Saskatchewan — Immunization Manual",
-    jurisdiction: "Saskatchewan, Canada",
-    topic: "interval",
-    sourceScope: "Canadian provincial schedule watch",
-    url: "https://www.ehealthsask.ca/services/Manuals/pages/sim.aspx",
-    followLinks: true,
-    linkPatterns: [/measles|MMR|MMRV|schedule|chapter/i],
-    why: "Monitors Saskatchewan Immunization Manual page for schedule chapter changes."
-  },
-  {
-    name: "Nova Scotia — Routine immunization schedules PDF",
-    jurisdiction: "Nova Scotia, Canada",
-    topic: "interval",
-    sourceScope: "Canadian provincial schedule watch",
-    url: "https://novascotia.ca/dhw/cdpc/documents/Routine-Immunization-Schedules-for-Children-Youth-Adults.pdf",
-    followLinks: false,
-    why: "Monitors Nova Scotia schedule PDF for MMR/MMRV timing changes."
-  },
-  {
-    name: "Nova Scotia — Immunization page",
-    jurisdiction: "Nova Scotia, Canada",
-    topic: "interval",
-    sourceScope: "Canadian provincial schedule watch",
-    url: "https://novascotia.ca/dhw/cdpc/immunization.asp",
-    followLinks: true,
-    linkPatterns: [/measles|MMR|MMRV|routine immunization|schedule/i],
-    why: "Monitors Nova Scotia immunization landing page for updated schedule links."
-  },
-  {
-    name: "New Brunswick — Immunization schedule",
-    jurisdiction: "New Brunswick, Canada",
-    topic: "interval",
-    sourceScope: "Canadian provincial schedule watch",
-    url: "https://www.gnb.ca/en/topic/health-wellness/immunization-vaccination/immunization-schedule.html",
-    followLinks: true,
-    linkPatterns: [/measles|MMR|MMRV|immunization schedule/i],
-    why: "Monitors New Brunswick schedule page for MMR/MMRV timing changes."
-  },
-  {
-    name: "Prince Edward Island — Childhood immunizations",
-    jurisdiction: "Prince Edward Island, Canada",
-    topic: "interval",
-    sourceScope: "Canadian provincial schedule watch",
-    url: "https://www.princeedwardisland.ca/en/information/health-and-wellness/childhood-immunizations",
-    followLinks: true,
-    linkPatterns: [/measles|MMR|MMRV|immunization/i],
-    why: "Monitors PEI childhood schedule for MMR/MMRV timing changes."
-  },
-  {
-    name: "Newfoundland and Labrador — Immunization schedule PDF",
-    jurisdiction: "Newfoundland and Labrador, Canada",
-    topic: "interval",
-    sourceScope: "Canadian provincial schedule watch",
-    url: "https://www.gov.nl.ca/hcs/files/Immunization-Schedule-for-Infants-and-SchoolAged-Children.pdf",
-    followLinks: false,
-    why: "Monitors Newfoundland and Labrador immunization schedule PDF for MMR/MMRV timing changes."
-  },
-  {
-    name: "Newfoundland and Labrador — Immunization page",
-    jurisdiction: "Newfoundland and Labrador, Canada",
-    topic: "interval",
-    sourceScope: "Canadian provincial schedule watch",
-    url: "https://www.gov.nl.ca/hcs/publichealth/cdc/immunizations/",
-    followLinks: true,
-    linkPatterns: [/measles|MMR|MMRV|schedule|immunization/i],
-    why: "Monitors Newfoundland and Labrador immunization landing page for updated schedule links."
-  },
-  {
-    name: "Yukon — Immunization schedules",
-    jurisdiction: "Yukon, Canada",
-    topic: "interval",
-    sourceScope: "Canadian territorial schedule watch",
-    url: "https://yukonimmunization.ca/get-immunized/immunization-schedules",
-    followLinks: true,
-    linkPatterns: [/measles|MMR|MMRV|schedule|immunization/i],
-    why: "Monitors Yukon schedule page for MMR/MMRV timing changes."
-  },
-  {
-    name: "Northwest Territories — Immunization schedule PDF",
-    jurisdiction: "Northwest Territories, Canada",
-    topic: "interval",
-    sourceScope: "Canadian territorial schedule watch",
-    url: "https://www.hss.gov.nt.ca/sites/hss/files/immunization-schedule-general-public.pdf",
-    followLinks: false,
-    why: "Monitors NWT immunization schedule PDF for MMR/MMRV timing changes."
-  },
-  {
-    name: "Nunavut — Recommended childhood immunization schedule PDF",
-    jurisdiction: "Nunavut, Canada",
-    topic: "interval",
-    sourceScope: "Canadian territorial schedule watch",
-    url: "https://www.gov.nu.ca/sites/default/files/documents/2021-10/nunavut_childhood_immunization_schedule_july_2021.pdf",
-    followLinks: false,
-    why: "Monitors Nunavut childhood immunization schedule PDF for MMR/MMRV timing changes."
-  },
-  {
-    name: "Nunavut — Childhood and adult immunization schedules and catch-up aids",
-    jurisdiction: "Nunavut, Canada",
-    topic: "interval",
-    sourceScope: "Canadian territorial schedule watch",
-    url: "https://www.gov.nu.ca/sites/default/files/documents/2023-12/7.0_nunavut_childhood_and_adult_immunization_schedules_and_catch-up_aids_july_2021.pdf",
-    followLinks: false,
-    why: "Monitors Nunavut schedule and catch-up aid document for MMR/MMRV timing and minimum interval changes."
-  }
-];
-
-const CURATED_NEWS_SOURCES = [
-  {
-    name: "CBC Health",
-    jurisdiction: "Canada",
-    type: "rss",
-    url: "https://www.cbc.ca/webfeed/rss/rss-health"
-  },
-  {
-    name: "CBC Canada",
-    jurisdiction: "Canada",
-    type: "rss",
-    url: "https://www.cbc.ca/webfeed/rss/rss-canada"
-  },
-  {
-    name: "CIDRAP Measles",
-    jurisdiction: "International",
-    type: "html",
-    url: "https://www.cidrap.umn.edu/measles"
-  },
-  {
-    name: "STAT Health",
-    jurisdiction: "United States",
-    type: "rss",
-    url: "https://www.statnews.com/feed/"
-  },
-  {
-    name: "WHO Disease Outbreak News",
-    jurisdiction: "Global",
-    type: "html",
-    url: "https://www.who.int/emergencies/disease-outbreak-news"
-  },
-  {
-    name: "PAHO Epidemiological Alerts",
-    jurisdiction: "Americas",
-    type: "html",
-    url: "https://www.paho.org/en/epidemiological-alerts-and-updates"
-  },
-  {
-    name: "ECDC Measles",
-    jurisdiction: "Europe",
-    type: "html",
-    url: "https://www.ecdc.europa.eu/en/measles"
-  },
-  {
-    name: "ECDC Measles Surveillance",
-    jurisdiction: "Europe",
-    type: "html",
-    url: "https://www.ecdc.europa.eu/en/measles/surveillance-and-disease-data"
-  },
-  {
-    name: "CDC Measles Cases and Outbreaks",
-    jurisdiction: "United States",
-    type: "html",
-    url: "https://www.cdc.gov/measles/data-research/index.html"
-  },
-  {
-    name: "CDC MMWR",
-    jurisdiction: "United States",
-    type: "html",
-    url: "https://www.cdc.gov/mmwr/index.html"
-  },
-  {
-    name: "PHAC Measles and Rubella Monitoring",
-    jurisdiction: "Canada",
-    type: "html",
-    url: "https://health-infobase.canada.ca/measles-rubella/"
-  }
-];
-
-const GDELT_PRIORITY_DOMAINS = [
-  "cbc.ca",
-  "cidrap.umn.edu",
-  "statnews.com",
-  "reuters.com",
-  "who.int",
-  "paho.org",
-  "ecdc.europa.eu",
-  "cdc.gov",
-  "canada.ca",
-  "publichealthontario.ca",
-  "bccdc.ca",
-  "gov.uk"
 ];
 
 function isoDate(date = new Date()) {
@@ -656,7 +330,6 @@ function clamp(value = "", max = 900) {
 
 function normalizeDate(value) {
   if (!value) return isoDate(NOW);
-
   const s = String(value).trim();
 
   if (/^\d{8}T/.test(s)) {
@@ -669,9 +342,28 @@ function normalizeDate(value) {
   if (!Number.isNaN(parsed.getTime())) return isoDate(parsed);
 
   const year = s.match(/\b(19|20)\d{2}\b/)?.[0];
-  if (!year) return isoDate(NOW);
+  return year ? `${year}-01-01` : isoDate(NOW);
+}
 
-  return `${year}-01-01`;
+function hasMeaslesSignal(text = "") {
+  return /measles|morbilli|MMR|MMRV|rougeole|masern|ROR/i.test(text);
+}
+
+function hasPregnancySignal(text = "") {
+  return /pregnan|maternal|fetal|foetal|fetus|foetus|obstetric|neonatal|congenital|post.?exposure|immune globulin|immunoglobulin/i.test(text);
+}
+
+function hasIntervalSignal(text = "") {
+  return /second dose|dose interval|minimum interval|accelerated|schedule|dose spacing|28 days|4 weeks|school entry|immunogenicity|effectiveness|early second/i.test(text);
+}
+
+function detectSilos(text = "", forcedTopic = "general") {
+  const silos = new Set(["general"]);
+
+  if (hasPregnancySignal(text) || forcedTopic === "pregnancy") silos.add("pregnancy");
+  if (hasIntervalSignal(text) || forcedTopic === "interval") silos.add("interval");
+
+  return [...silos];
 }
 
 function inferJurisdiction(text, fallback = "International") {
@@ -704,45 +396,44 @@ function inferJurisdiction(text, fallback = "International") {
   return fallback;
 }
 
+function isCanadaJurisdiction(jurisdiction = "") {
+  return /canada|ontario|quebec|québec|alberta|british columbia|manitoba|saskatchewan|nova scotia|new brunswick|newfoundland|prince edward island|yukon|nunavut|northwest territories/i.test(jurisdiction);
+}
+
+function isProvincialCanadian(jurisdiction = "") {
+  return /ontario|quebec|québec|alberta|british columbia|manitoba|saskatchewan|nova scotia|new brunswick|newfoundland|prince edward island|yukon|nunavut|northwest territories/i.test(jurisdiction);
+}
+
 function inferSignal(topic, title, abstract = "") {
   const t = `${title} ${abstract}`.toLowerCase();
 
-  if (topic === "pregnancy") {
+  if (hasPregnancySignal(t)) {
     if (/post.?exposure|immune globulin|immunoglobulin|igiv|igim/.test(t)) {
-      return "Post-exposure prophylaxis signal for susceptible pregnant contacts";
+      return "Pregnancy / post-exposure prophylaxis signal";
     }
-    if (/mmr|vaccine|vaccination|inadvertent/.test(t) && /pregnan|maternal/.test(t)) {
-      return "MMR exposure or vaccination-in-pregnancy evidence signal";
-    }
-    if (/outbreak|cluster|case series/.test(t)) {
-      return "Outbreak or case-series signal involving pregnancy";
-    }
-    if (/fetal|foetal|neonatal|congenital|miscarriage|stillbirth|preterm/.test(t)) {
-      return "Maternal-fetal outcome signal";
-    }
-    return "Pregnancy-related measles evidence signal";
+    return "Pregnancy or maternal-fetal measles signal";
   }
 
-  if (/28 days|4 weeks|minimum interval|early second|accelerated/.test(t)) {
-    return "Minimum or shortened second-dose interval signal";
-  }
-  if (/immunogenicity|seroconversion|antibody|effectiveness|efficacy/.test(t)) {
-    return "Immunogenicity or effectiveness by dose timing signal";
-  }
-  if (/guidance|recommendation|schedule|school entry|routine|catch-up|catch up/.test(t)) {
-    return "Schedule recommendation signal";
-  }
-  return "Second-dose interval evidence signal";
-}
-
-function inferTopicForNews(title = "", description = "") {
-  const t = `${title} ${description}`;
-
-  if (/pregnan|maternal|fetal|foetal|fetus|foetus|obstetric|neonatal|congenital|post.?exposure|immune globulin|immunoglobulin/i.test(t)) {
-    return "pregnancy";
+  if (hasIntervalSignal(t)) {
+    if (/28 days|4 weeks|minimum interval|early second|accelerated/.test(t)) {
+      return "Minimum or shortened second-dose interval signal";
+    }
+    return "Schedule, interval, immunogenicity, or effectiveness signal";
   }
 
-  return "interval";
+  if (/outbreak|cluster|exposure|case|surveillance|epi|epidemiolog/.test(t)) {
+    return "Measles outbreak, exposure, or surveillance signal";
+  }
+
+  if (/misinformation|vitamin a|cod liver|treatment|searches|communication/.test(t)) {
+    return "Measles misinformation, treatment narrative, or public communications signal";
+  }
+
+  if (/vaccine|vaccination|MMR|MMRV|immunization|immunisation/.test(t)) {
+    return "Measles immunization program signal";
+  }
+
+  return "General measles intelligence signal";
 }
 
 function sourceTypeFromResult(result) {
@@ -751,28 +442,60 @@ function sourceTypeFromResult(result) {
   return "publication";
 }
 
+function priorityScoreFor(item) {
+  let score = 0;
+
+  if (item.sourceType === "guidance" && item.updateStatus === "changed_since_last_refresh") score += 120;
+  if (isProvincialCanadian(item.jurisdiction)) score += 100;
+  else if (isCanadaJurisdiction(item.jurisdiction)) score += 85;
+
+  if (item.silos?.includes("pregnancy")) score += 35;
+  if (item.silos?.includes("interval")) score += 35;
+
+  if (item.sourceType === "outbreak") score += 30;
+  if (item.sourceType === "news") score += 15;
+  if (item.sourceType === "publication" || item.sourceType === "preprint") score += 10;
+
+  return score;
+}
+
 function makeItem(raw) {
   const url = normalizeUrl(raw.url);
   const id = sha256(url || `${raw.title}-${raw.date}-${raw.source}`);
-  const title = clamp(raw.title, 260);
+  const title = clamp(raw.title, 280);
+  const text = `${title} ${raw.abstract || ""} ${raw.source || ""} ${url}`;
+  const silos = raw.silos || detectSilos(text, raw.topic || "general");
+  const jurisdiction = raw.jurisdiction || inferJurisdiction(`${title} ${raw.source} ${url}`);
+  const topic = raw.topic || (silos.includes("pregnancy") ? "pregnancy" : silos.includes("interval") ? "interval" : "general");
 
-  return {
+  const item = {
     id,
-    topic: raw.topic,
-    topicLabel: TOPICS[raw.topic]?.label || raw.topic,
+    topic,
+    topicLabel: TOPICS[topic]?.label || TOPICS.general.label,
+    silos,
     sourceType: raw.sourceType,
     title,
     url,
-    source: clamp(raw.source || "Unknown source", 160),
+    source: clamp(raw.source || "Unknown source", 180),
     date: normalizeDate(raw.date),
-    jurisdiction: raw.jurisdiction || inferJurisdiction(`${title} ${raw.source} ${url}`),
-    evidenceSignal: raw.evidenceSignal || inferSignal(raw.topic, title, raw.abstract),
-    whyItMatters: clamp(raw.whyItMatters || inferSignal(raw.topic, title, raw.abstract), 520),
+    jurisdiction,
+    evidenceSignal: raw.evidenceSignal || inferSignal(topic, title, raw.abstract),
+    whyItMatters: clamp(raw.whyItMatters || inferSignal(topic, title, raw.abstract), 560),
     abstract: clamp(raw.abstract || "", 1200),
     queryTag: raw.queryTag || null,
     sourceFingerprint: raw.sourceFingerprint || null,
+    displayInDashboard: raw.displayInDashboard !== false,
+    updateStatus: raw.updateStatus || null,
+    sourceScope: raw.sourceScope || null,
+    currentFingerprint: raw.currentFingerprint || null,
+    previousFingerprint: raw.previousFingerprint || null,
+    changedAt: raw.changedAt || null,
+    parentSource: raw.parentSource || null,
     fetchedAt: NOW.toISOString()
   };
+
+  item.priorityScore = raw.priorityScore ?? priorityScoreFor(item);
+  return item;
 }
 
 function parseRssItems(xml) {
@@ -849,7 +572,7 @@ async function searchPubMed(topic, query) {
     db: "pubmed",
     term: query,
     retmode: "json",
-    retmax: "60",
+    retmax: "80",
     sort: "pub_date",
     datetype: "pdat",
     mindate: from,
@@ -859,8 +582,7 @@ async function searchPubMed(topic, query) {
 
   if (NCBI_EMAIL) params.set("email", NCBI_EMAIL);
 
-  const searchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?${params}`;
-  const search = await fetchJson(searchUrl);
+  const search = await fetchJson(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?${params}`);
   const ids = search?.esearchresult?.idlist || [];
   if (!ids.length) return [];
 
@@ -875,8 +597,7 @@ async function searchPubMed(topic, query) {
 
   if (NCBI_EMAIL) summaryParams.set("email", NCBI_EMAIL);
 
-  const summaryUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?${summaryParams}`;
-  const summary = await fetchJson(summaryUrl);
+  const summary = await fetchJson(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?${summaryParams}`);
 
   return ids
     .map((id) => summary?.result?.[id])
@@ -896,10 +617,10 @@ async function searchPubMed(topic, query) {
         source,
         date: s.pubdate || s.sortpubdate,
         abstract: "",
-        queryTag: "PubMed",
-        whyItMatters: inferSignal(topic, title)
+        queryTag: "PubMed"
       });
-    });
+    })
+    .filter((item) => hasMeaslesSignal(`${item.title} ${item.abstract}`));
 }
 
 function europePmcUrl(r) {
@@ -916,30 +637,30 @@ async function searchEuropePmc(topic, query) {
   const params = new URLSearchParams({
     query: datedQuery,
     format: "json",
-    pageSize: "75",
+    pageSize: "90",
     sort_date: "y"
   });
 
-  const url = `https://www.ebi.ac.uk/europepmc/webservices/rest/search?${params}`;
-  const data = await fetchJson(url);
+  const data = await fetchJson(`https://www.ebi.ac.uk/europepmc/webservices/rest/search?${params}`);
   const results = data?.resultList?.result || [];
 
-  return results.map((r) => {
-    const title = cleanText(r.title);
-    const abstract = cleanText(r.abstractText || "");
+  return results
+    .map((r) => {
+      const title = cleanText(r.title);
+      const abstract = cleanText(r.abstractText || "");
 
-    return makeItem({
-      topic,
-      sourceType: sourceTypeFromResult(r),
-      title,
-      url: europePmcUrl(r),
-      source: r.journalTitle || r.source || "Europe PMC",
-      date: r.firstPublicationDate || r.firstIndexDate || r.pubYear,
-      abstract,
-      queryTag: "Europe PMC",
-      whyItMatters: inferSignal(topic, title, abstract)
-    });
-  });
+      return makeItem({
+        topic,
+        sourceType: sourceTypeFromResult(r),
+        title,
+        url: europePmcUrl(r),
+        source: r.journalTitle || r.source || "Europe PMC",
+        date: r.firstPublicationDate || r.firstIndexDate || r.pubYear,
+        abstract,
+        queryTag: "Europe PMC"
+      });
+    })
+    .filter((item) => hasMeaslesSignal(`${item.title} ${item.abstract}`));
 }
 
 async function searchPreprintServer(topic, server) {
@@ -948,10 +669,8 @@ async function searchPreprintServer(topic, server) {
   const out = [];
 
   for (const cursor of [0, 100, 200]) {
-    const url = `https://api.biorxiv.org/details/${server}/${from}/${to}/${cursor}`;
-    const data = await fetchJson(url);
+    const data = await fetchJson(`https://api.biorxiv.org/details/${server}/${from}/${to}/${cursor}`);
     const records = data?.collection || [];
-
     if (!records.length) break;
 
     for (const r of records) {
@@ -959,7 +678,9 @@ async function searchPreprintServer(topic, server) {
       const abstract = cleanText(r.abstract || "");
       const text = `${title} ${abstract}`;
 
-      if (!relevantToTopicText(text, topic)) continue;
+      if (!hasMeaslesSignal(text)) continue;
+      if (topic === "pregnancy" && !hasPregnancySignal(text)) continue;
+      if (topic === "interval" && !hasIntervalSignal(text)) continue;
 
       out.push(
         makeItem({
@@ -970,8 +691,7 @@ async function searchPreprintServer(topic, server) {
           source: server === "medrxiv" ? "medRxiv" : "bioRxiv",
           date: r.date || r.post_date || isoDate(NOW),
           abstract,
-          queryTag: `${server} API`,
-          whyItMatters: inferSignal(topic, title, abstract)
+          queryTag: `${server} API`
         })
       );
     }
@@ -989,20 +709,19 @@ async function searchGdelt(topic, query) {
     mode: "ArtList",
     format: "json",
     sort: "DateDesc",
-    maxrecords: "75",
+    maxrecords: "100",
     timespan: `${Math.min(LOOKBACK_DAYS, 30)}d`
   });
 
-  const url = `https://api.gdeltproject.org/api/v2/doc/doc?${params}`;
-  const data = await fetchJson(url);
+  const data = await fetchJson(`https://api.gdeltproject.org/api/v2/doc/doc?${params}`);
   const articles = data?.articles || [];
 
   return articles
     .filter((a) => a.url && a.title)
     .map((a) => {
       const title = cleanText(a.title);
-      const text = `${title} ${a.domain || ""} ${a.sourcecountry || ""}`;
-      const isOutbreak = /outbreak|cluster|exposure|case|surveillance/.test(text.toLowerCase());
+      const text = `${title} ${a.domain || ""} ${a.sourcecountry || ""} ${a.url || ""}`;
+      const isOutbreak = /outbreak|cluster|exposure|case|surveillance|epi/.test(text.toLowerCase());
 
       return makeItem({
         topic,
@@ -1012,143 +731,10 @@ async function searchGdelt(topic, query) {
         source: a.domain || "GDELT-indexed news",
         date: a.seendate,
         jurisdiction: inferJurisdiction(text, a.sourcecountry || "International"),
-        queryTag: "GDELT news",
-        whyItMatters: inferSignal(topic, title)
+        queryTag: "GDELT news"
       });
-    });
-}
-
-async function fetchCuratedNewsSources() {
-  const items = [];
-
-  for (const source of CURATED_NEWS_SOURCES) {
-    const result = await safe(`curated news ${source.name}`, async () => {
-      const { text, lastModified } = await fetchText(source.url);
-
-      if (source.type === "rss") {
-        const rssItems = parseRssItems(text);
-
-        return rssItems
-          .filter((entry) => /measles|MMR|MMRV|morbilli|rubella/i.test(`${entry.title} ${entry.description}`))
-          .map((entry) => {
-            const topic = inferTopicForNews(entry.title, entry.description);
-
-            return makeItem({
-              topic,
-              sourceType: /outbreak|case|exposure|cluster|surveillance/i.test(`${entry.title} ${entry.description}`)
-                ? "outbreak"
-                : "news",
-              title: entry.title,
-              url: entry.url,
-              source: source.name,
-              date: entry.date || lastModified || isoDate(NOW),
-              jurisdiction: source.jurisdiction,
-              abstract: entry.description,
-              queryTag: "Curated news source",
-              whyItMatters: inferSignal(topic, entry.title, entry.description)
-            });
-          });
-      }
-
-      const links = extractLinksFromHtml(text, source.url)
-        .filter((link) => /measles|MMR|MMRV|morbilli|rubella/i.test(`${link.title} ${link.url}`))
-        .slice(0, 40);
-
-      return links.map((link) => {
-        const topic = inferTopicForNews(link.title, link.url);
-
-        return makeItem({
-          topic,
-          sourceType: /outbreak|surveillance|disease-outbreak-news|epidemiological-alert|case|cluster/i.test(`${link.title} ${link.url}`)
-            ? "outbreak"
-            : "news",
-          title: link.title || source.name,
-          url: link.url,
-          source: source.name,
-          date: lastModified || isoDate(NOW),
-          jurisdiction: source.jurisdiction,
-          queryTag: "Curated source page",
-          whyItMatters: `Potential high-priority measles item from ${source.name}. Review for relevance to pregnancy, exposure management, vaccine schedule, outbreak response, or dose interval evidence.`
-        });
-      });
-    });
-
-    items.push(...result);
-    await sleep(250);
-  }
-
-  return items;
-}
-
-async function searchPriorityDomainsViaGdelt() {
-  const items = [];
-
-  for (const domain of GDELT_PRIORITY_DOMAINS) {
-    for (const topic of Object.keys(TOPICS)) {
-      const query =
-        topic === "pregnancy"
-          ? `(measles OR MMR OR morbilli) (pregnancy OR pregnant OR maternal OR fetal OR foetal OR obstetric) domain:${domain}`
-          : `(measles OR MMR OR MMRV) ("second dose" OR interval OR accelerated OR schedule OR "28 days" OR "4 weeks") domain:${domain}`;
-
-      const result = await safe(`GDELT priority ${domain} ${topic}`, () =>
-        searchGdelt(topic, query)
-      );
-
-      items.push(
-        ...result.map((item) => ({
-          ...item,
-          queryTag: `Priority source via GDELT: ${domain}`
-        }))
-      );
-
-      await sleep(250);
-    }
-  }
-
-  return items;
-}
-
-function extractHtmlTitle(html) {
-  const match = String(html).match(/<title[^>]*>([^<]+)<\/title>/i);
-  return match ? cleanText(match[1]) : "";
-}
-
-function normalizeForFingerprint(text, contentType = "") {
-  if (/pdf/i.test(contentType)) {
-    return String(text);
-  }
-
-  return cleanText(
-    String(text)
-      .replace(/<script[\s\S]*?<\/script>/gi, " ")
-      .replace(/<style[\s\S]*?<\/style>/gi, " ")
-      .replace(/<nav[\s\S]*?<\/nav>/gi, " ")
-      .replace(/<footer[\s\S]*?<\/footer>/gi, " ")
-      .replace(/\d{1,2}:\d{2}(:\d{2})?\s?(AM|PM)?/gi, " ")
-      .replace(/\b\d{4}-\d{2}-\d{2}T[\d:.]+Z\b/gi, " ")
-      .replace(/\s+/g, " ")
-      .toLowerCase()
-  );
-}
-
-function classifyGuidanceChange(previous, currentFingerprint) {
-  if (!previous) return "new_watch_item";
-
-  if (
-    previous.currentFingerprint &&
-    previous.currentFingerprint !== currentFingerprint
-  ) {
-    return "changed_since_last_refresh";
-  }
-
-  if (
-    previous.sourceFingerprint &&
-    previous.sourceFingerprint !== currentFingerprint
-  ) {
-    return "changed_since_last_refresh";
-  }
-
-  return "no_change_detected";
+    })
+    .filter((item) => hasMeaslesSignal(`${item.title} ${item.url}`));
 }
 
 function extractLinksFromHtml(html, baseUrl) {
@@ -1167,18 +753,190 @@ function extractLinksFromHtml(html, baseUrl) {
     .filter((link) => /^https?:\/\//i.test(link.url));
 }
 
+function inferTopicForNews(title = "", description = "") {
+  const text = `${title} ${description}`;
+  if (hasPregnancySignal(text)) return "pregnancy";
+  if (hasIntervalSignal(text)) return "interval";
+  return "general";
+}
+
+async function fetchCuratedNewsSources() {
+  const items = [];
+
+  for (const source of CURATED_NEWS_SOURCES) {
+    const result = await safe(`curated news ${source.name}`, async () => {
+      const { text, lastModified } = await fetchText(source.url);
+
+      if (source.type === "rss") {
+        return parseRssItems(text)
+          .filter((entry) => hasMeaslesSignal(`${entry.title} ${entry.description} ${entry.url}`))
+          .map((entry) => {
+            const topic = inferTopicForNews(entry.title, entry.description);
+
+            return makeItem({
+              topic,
+              sourceType: /outbreak|case|exposure|cluster|surveillance|epi/i.test(`${entry.title} ${entry.description}`)
+                ? "outbreak"
+                : "news",
+              title: entry.title,
+              url: entry.url,
+              source: source.name,
+              date: entry.date || lastModified || isoDate(NOW),
+              jurisdiction: source.jurisdiction,
+              abstract: entry.description,
+              queryTag: "Curated news source"
+            });
+          });
+      }
+
+      return extractLinksFromHtml(text, source.url)
+        .filter((link) => hasMeaslesSignal(`${link.title} ${link.url}`))
+        .slice(0, 60)
+        .map((link) => {
+          const topic = inferTopicForNews(link.title, link.url);
+
+          return makeItem({
+            topic,
+            sourceType: /outbreak|surveillance|disease-outbreak-news|epidemiological-alert|case|cluster|epi/i.test(`${link.title} ${link.url}`)
+              ? "outbreak"
+              : "news",
+            title: link.title || source.name,
+            url: link.url,
+            source: source.name,
+            date: lastModified || isoDate(NOW),
+            jurisdiction: source.jurisdiction,
+            queryTag: "Curated source page",
+            whyItMatters: `High-priority measles item from ${source.name}. Review for relevance to outbreaks, surveillance, immunization programs, pregnancy, exposure management, or dosing interval evidence.`
+          });
+        });
+    });
+
+    items.push(...result);
+    await sleep(250);
+  }
+
+  return items;
+}
+
+async function fetchCanadianPublicHealthSources() {
+  const items = [];
+
+  for (const source of CANADIAN_PUBLIC_HEALTH_SOURCES) {
+    const result = await safe(`Canadian public health ${source.name}`, async () => {
+      const { text, lastModified } = await fetchText(source.url);
+      const links = extractLinksFromHtml(text, source.url)
+        .filter((link) => hasMeaslesSignal(`${link.title} ${link.url}`))
+        .slice(0, 75);
+
+      const sourcePageItem = hasMeaslesSignal(`${source.name} ${source.url}`)
+        ? [
+            makeItem({
+              topic: "general",
+              sourceType: "outbreak",
+              title: source.name,
+              url: source.url,
+              source: source.name,
+              date: lastModified || isoDate(NOW),
+              jurisdiction: source.jurisdiction,
+              queryTag: "Canadian public health source",
+              whyItMatters: "Canadian public health measles source monitored for outbreak updates, epi summaries, exposure notices, surveillance changes, and immunization program information."
+            })
+          ]
+        : [];
+
+      const linkedItems = links.map((link) => {
+        const topic = inferTopicForNews(link.title, link.url);
+
+        return makeItem({
+          topic,
+          sourceType: /outbreak|surveillance|exposure|case|epi|summary|report/i.test(`${link.title} ${link.url}`)
+            ? "outbreak"
+            : "news",
+          title: link.title || source.name,
+          url: link.url,
+          source: source.name,
+          date: lastModified || isoDate(NOW),
+          jurisdiction: source.jurisdiction,
+          queryTag: "Canadian public health linked update",
+          whyItMatters: "Canadian provincial/territorial or national public health measles update. Prioritize review for Canadian situational awareness."
+        });
+      });
+
+      return [...sourcePageItem, ...linkedItems];
+    });
+
+    items.push(...result);
+    await sleep(250);
+  }
+
+  return items;
+}
+
+async function searchPriorityDomainsViaGdelt() {
+  const items = [];
+
+  for (const domain of GDELT_PRIORITY_DOMAINS) {
+    const result = await safe(`GDELT priority ${domain}`, () =>
+      searchGdelt("general", `(measles OR MMR OR MMRV OR morbilli) domain:${domain}`)
+    );
+
+    items.push(
+      ...result.map((item) => ({
+        ...item,
+        queryTag: `Priority source via GDELT: ${domain}`
+      }))
+    );
+
+    await sleep(250);
+  }
+
+  return items;
+}
+
+function extractHtmlTitle(html) {
+  const match = String(html).match(/<title[^>]*>([^<]+)<\/title>/i);
+  return match ? cleanText(match[1]) : "";
+}
+
+function normalizeForFingerprint(text, contentType = "") {
+  if (/pdf/i.test(contentType)) return String(text);
+
+  return cleanText(
+    String(text)
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<nav[\s\S]*?<\/nav>/gi, " ")
+      .replace(/<footer[\s\S]*?<\/footer>/gi, " ")
+      .replace(/\d{1,2}:\d{2}(:\d{2})?\s?(AM|PM)?/gi, " ")
+      .replace(/\b\d{4}-\d{2}-\d{2}T[\d:.]+Z\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .toLowerCase()
+  );
+}
+
+function guidanceFingerprintPayload(fetched) {
+  if (/pdf/i.test(fetched.contentType)) return fetched.rawFingerprint;
+  return normalizeForFingerprint(fetched.text, fetched.contentType);
+}
+
+function classifyGuidanceChange(previous, currentFingerprint) {
+  if (!previous) return "new_watch_item";
+
+  if (previous.currentFingerprint && previous.currentFingerprint !== currentFingerprint) {
+    return "changed_since_last_refresh";
+  }
+
+  if (previous.sourceFingerprint && previous.sourceFingerprint !== currentFingerprint) {
+    return "changed_since_last_refresh";
+  }
+
+  return "no_change_detected";
+}
+
 function isRelevantGuidanceLink(link, source) {
   const text = `${link.title || ""} ${link.url || ""}`;
   const patterns = source.linkPatterns || DEFAULT_GUIDANCE_LINK_PATTERNS;
   return patterns.some((pattern) => pattern.test(text));
-}
-
-function guidanceFingerprintPayload(fetched) {
-  if (/pdf/i.test(fetched.contentType)) {
-    return fetched.rawFingerprint;
-  }
-
-  return normalizeForFingerprint(fetched.text, fetched.contentType);
 }
 
 function makeGuidanceWatchItem({
@@ -1195,9 +953,10 @@ function makeGuidanceWatchItem({
   const currentFingerprint = sha256(guidanceFingerprintPayload(fetched)).slice(0, 32);
   const previous = existingItems.find((item) => item.id === id);
   const updateStatus = classifyGuidanceChange(previous, currentFingerprint);
+  const changed = updateStatus === "changed_since_last_refresh";
 
   const item = makeItem({
-    topic: source.topic,
+    topic: source.topic || "general",
     sourceType: "guidance",
     title: title || source.name,
     url: normalizedUrl,
@@ -1206,48 +965,44 @@ function makeGuidanceWatchItem({
     jurisdiction: source.jurisdiction,
     sourceFingerprint: currentFingerprint,
     queryTag,
-    whyItMatters:
-      updateStatus === "changed_since_last_refresh"
-        ? `Potential measles/MMR recommendation update detected in ${source.name}. Review for changes related to pregnancy, post-exposure management, accelerated scheduling, catch-up, or minimum dose intervals.`
-        : source.why || "Monitored source for measles/MMR guidance and schedule changes."
+    sourceScope: source.sourceScope || "Guidance watch",
+    currentFingerprint,
+    previousFingerprint: previous?.currentFingerprint || previous?.sourceFingerprint || null,
+    changedAt: changed ? NOW.toISOString() : previous?.changedAt || null,
+    parentSource: parentName,
+    updateStatus,
+    displayInDashboard: changed,
+    whyItMatters: changed
+      ? `Potential measles/MMR recommendation update detected in ${source.name}. Review for changes related to outbreaks, pregnancy, post-exposure management, accelerated scheduling, catch-up, or dose intervals.`
+      : source.why || "Monitored guidance source. Hidden from dashboard unless a change is detected."
   });
 
   return {
     ...item,
     id,
-    sourceScope: source.sourceScope || "Guidance watch",
-    updateStatus,
-    changedAt:
-      updateStatus === "changed_since_last_refresh" ||
-      updateStatus === "new_watch_item"
-        ? NOW.toISOString()
-        : previous?.changedAt || null,
-    previousFingerprint:
-      previous?.currentFingerprint || previous?.sourceFingerprint || null,
-    currentFingerprint,
-    parentSource: parentName,
-    previousFetchedAt: previous?.fetchedAt || null
+    displayInDashboard: changed,
+    priorityScore: changed ? priorityScoreFor(item) + 150 : priorityScoreFor(item)
   };
 }
 
-async function fetchGuidanceWatchSources(existingItems = [], sources = []) {
+async function fetchGuidanceWatchSources(existingItems = []) {
   const items = [];
 
-  for (const source of sources) {
+  for (const source of GUIDANCE_WATCH_SOURCES) {
     const result = await safe(`guidance watch ${source.name}`, async () => {
       const fetched = await fetchText(source.url);
       const htmlTitle = extractHtmlTitle(fetched.text);
 
-      const baseItem = makeGuidanceWatchItem({
-        source,
-        url: source.url,
-        title: htmlTitle || source.name,
-        fetched,
-        existingItems,
-        queryTag: source.sourceScope || "Guidance watch"
-      });
-
-      const out = [baseItem];
+      const out = [
+        makeGuidanceWatchItem({
+          source,
+          url: source.url,
+          title: htmlTitle || source.name,
+          fetched,
+          existingItems,
+          queryTag: source.sourceScope || "Guidance watch"
+        })
+      ];
 
       const shouldFollowLinks =
         source.followLinks &&
@@ -1257,9 +1012,7 @@ async function fetchGuidanceWatchSources(existingItems = [], sources = []) {
       if (shouldFollowLinks) {
         const links = extractLinksFromHtml(fetched.text, source.url)
           .filter((link) => isRelevantGuidanceLink(link, source))
-          .filter((link, index, arr) =>
-            arr.findIndex((x) => x.url === link.url) === index
-          )
+          .filter((link, index, arr) => arr.findIndex((x) => x.url === link.url) === index)
           .slice(0, 25);
 
         for (const link of links) {
@@ -1294,16 +1047,9 @@ async function fetchGuidanceWatchSources(existingItems = [], sources = []) {
   return items;
 }
 
-function relevantToTopicText(text, topic) {
-  const rules = TOPICS[topic]?.include || [];
-  return rules.every((rule) => rule.test(text));
-}
-
-function relevantToTopic(item, topic) {
+function relevantToDashboard(item) {
   if (item.sourceType === "guidance") return true;
-
-  const text = `${item.title} ${item.abstract || ""} ${item.source || ""} ${item.queryTag || ""}`;
-  return relevantToTopicText(text, topic);
+  return hasMeaslesSignal(`${item.title} ${item.abstract || ""} ${item.url || ""}`);
 }
 
 async function readExisting() {
@@ -1343,17 +1089,11 @@ async function main() {
   }
 
   fresh.push(...await fetchCuratedNewsSources());
+  fresh.push(...await fetchCanadianPublicHealthSources());
   fresh.push(...await searchPriorityDomainsViaGdelt());
+  fresh.push(...await fetchGuidanceWatchSources(existing));
 
-  fresh.push(
-    ...await fetchGuidanceWatchSources(existing, [
-      ...NITAG_WATCH_SOURCES,
-      ...CANADIAN_PROVINCIAL_SCHEDULE_WATCH_SOURCES
-    ])
-  );
-
-  const filteredFresh = fresh.filter((item) => relevantToTopic(item, item.topic));
-
+  const filteredFresh = fresh.filter(relevantToDashboard);
   const merged = new Map();
 
   for (const oldItem of existing) {
@@ -1373,13 +1113,18 @@ async function main() {
   }
 
   const items = [...merged.values()]
-    .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+    .sort((a, b) => {
+      const scoreDiff = Number(b.priorityScore || 0) - Number(a.priorityScore || 0);
+      if (scoreDiff !== 0) return scoreDiff;
+      return String(b.date).localeCompare(String(a.date));
+    })
     .slice(0, MAX_ITEMS);
 
   const output = {
     updatedAt: NOW.toISOString(),
     lookbackDays: LOOKBACK_DAYS,
     itemCount: items.length,
+    visibleItemCount: items.filter((item) => item.displayInDashboard !== false).length,
     topics: Object.fromEntries(
       Object.entries(TOPICS).map(([key, value]) => [key, value.label])
     ),
@@ -1389,7 +1134,8 @@ async function main() {
   await fs.mkdir(new URL("../public/data/", import.meta.url), { recursive: true });
   await fs.writeFile(OUTFILE, JSON.stringify(output, null, 2) + "\n", "utf8");
 
-  console.log(`Wrote ${items.length} evidence items to public/data/evidence.json`);
+  console.log(`Wrote ${items.length} total records to public/data/evidence.json`);
+  console.log(`${output.visibleItemCount} records visible on dashboard`);
 }
 
 main().catch((err) => {

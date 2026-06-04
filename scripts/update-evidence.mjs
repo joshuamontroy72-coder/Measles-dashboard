@@ -297,6 +297,29 @@ function sha256(value) {
   return createHash("sha256").update(input).digest("hex");
 }
 
+function extractSourceDate(html = "", fallback = null) {
+  const text = String(html);
+
+  const patterns = [
+    /<meta[^>]+property=["']article:published_time["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+name=["']date["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+name=["']dcterms\.created["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+name=["']dcterms\.modified["'][^>]+content=["']([^"']+)["']/i,
+    /"datePublished"\s*:\s*"([^"]+)"/i,
+    /"dateModified"\s*:\s*"([^"]+)"/i,
+    /<time[^>]+datetime=["']([^"']+)["']/i,
+    /\b(?:Updated|Last updated|Published|Date posted)[:\s]+([A-Z][a-z]+ \d{1,2}, \d{4})/i,
+    /\b(?:Updated|Last updated|Published|Date posted)[:\s]+(\d{4}-\d{2}-\d{2})/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) return normalizeDate(match[1]);
+  }
+
+  return fallback ? normalizeDate(fallback) : null;
+}
+
 function normalizeUrl(url) {
   try {
     const u = new URL(url);
@@ -478,6 +501,8 @@ function makeItem(raw) {
     url,
     source: clamp(raw.source || "Unknown source", 180),
     date: normalizeDate(raw.date),
+    dateBasis: raw.dateBasis || "source_or_fallback_date",
+    sourceDate: raw.sourceDate ? normalizeDate(raw.sourceDate) : normalizeDate(raw.date),
     jurisdiction,
     evidenceSignal: raw.evidenceSignal || inferSignal(topic, title, raw.abstract),
     whyItMatters: clamp(raw.whyItMatters || inferSignal(topic, title, raw.abstract), 560),
@@ -844,23 +869,41 @@ async function fetchCanadianPublicHealthSources() {
           ]
         : [];
 
-      const linkedItems = links.map((link) => {
-        const topic = inferTopicForNews(link.title, link.url);
+const linkedItems = [];
 
-        return makeItem({
-          topic,
-          sourceType: /outbreak|surveillance|exposure|case|epi|summary|report/i.test(`${link.title} ${link.url}`)
-            ? "outbreak"
-            : "news",
-          title: link.title || source.name,
-          url: link.url,
-          source: source.name,
-          date: lastModified || isoDate(NOW),
-          jurisdiction: source.jurisdiction,
-          queryTag: "Canadian public health linked update",
-          whyItMatters: "Canadian provincial/territorial or national public health measles update. Prioritize review for Canadian situational awareness."
-        });
-      });
+for (const link of links) {
+  const linkedResult = await safe(`Canadian linked page ${link.url}`, async () => {
+    const linkedFetched = await fetchText(link.url);
+    const linkedTitle = extractHtmlTitle(linkedFetched.text) || link.title || source.name;
+
+    const sourceDate =
+      extractSourceDate(linkedFetched.text, linkedFetched.lastModified) ||
+      extractSourceDate(text, lastModified);
+
+    const topic = inferTopicForNews(linkedTitle, link.url);
+
+    return [
+      makeItem({
+        topic,
+        sourceType: /outbreak|surveillance|exposure|case|epi|summary|report/i.test(`${linkedTitle} ${link.url}`)
+          ? "outbreak"
+          : "news",
+        title: linkedTitle,
+        url: link.url,
+        source: source.name,
+        date: sourceDate || isoDate(NOW),
+        sourceDate: sourceDate || null,
+        dateBasis: sourceDate ? "source_page_date" : "first_seen_or_fetch_date",
+        jurisdiction: source.jurisdiction,
+        queryTag: "Canadian public health linked update",
+        whyItMatters: "Canadian provincial/territorial or national public health measles update. Prioritize review for Canadian situational awareness."
+      })
+    ];
+  });
+
+  linkedItems.push(...linkedResult);
+  await sleep(150);
+}
 
       return [...sourcePageItem, ...linkedItems];
     });
@@ -896,6 +939,30 @@ async function searchPriorityDomainsViaGdelt() {
 function extractHtmlTitle(html) {
   const match = String(html).match(/<title[^>]*>([^<]+)<\/title>/i);
   return match ? cleanText(match[1]) : "";
+}
+
+function extractSourceDate(html = "", fallback = null) {
+  const text = String(html);
+
+  const patterns = [
+    /<meta[^>]+property=["']article:published_time["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+property=["']article:modified_time["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+name=["']date["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+name=["']dcterms\.created["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+name=["']dcterms\.modified["'][^>]+content=["']([^"']+)["']/i,
+    /"datePublished"\s*:\s*"([^"]+)"/i,
+    /"dateModified"\s*:\s*"([^"]+)"/i,
+    /<time[^>]+datetime=["']([^"']+)["']/i,
+    /\b(?:Updated|Last updated|Published|Date posted)[:\s]+([A-Z][a-z]+ \d{1,2}, \d{4})/i,
+    /\b(?:Updated|Last updated|Published|Date posted)[:\s]+(\d{4}-\d{2}-\d{2})/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) return normalizeDate(match[1]);
+  }
+
+  return fallback ? normalizeDate(fallback) : null;
 }
 
 function normalizeForFingerprint(text, contentType = "") {

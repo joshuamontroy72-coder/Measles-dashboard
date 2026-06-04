@@ -29,6 +29,13 @@ export type EvidenceItem = {
   firstSeenAt?: string;
   reviewStatus?: "unreviewed" | "include" | "exclude" | "watch";
   reviewerNotes?: string;
+  sourceScope?: string;
+  updateStatus?: "new_watch_item" | "changed_since_last_refresh" | "no_change_detected";
+  changedAt?: string | null;
+  previousFingerprint?: string | null;
+  currentFingerprint?: string | null;
+  parentSource?: string | null;
+  previousFetchedAt?: string | null;
 };
 
 export type EvidenceData = {
@@ -314,14 +321,30 @@ function EvidenceCard({ item }: { item: EvidenceItem }) {
 
       <h3>{item.title}</h3>
 
-      <p className="source">
-        {item.source}
-        {item.queryTag ? ` · ${item.queryTag}` : ""}
-      </p>
+<p className="source">
+  {item.source}
+  {item.queryTag ? ` · ${item.queryTag}` : ""}
+</p>
 
-      <div className="signal">
-        <strong>Evidence signal:</strong> {item.evidenceSignal}
-      </div>
+{item.sourceType === "guidance" && item.updateStatus ? (
+  <div
+    className={`signal ${
+      item.updateStatus === "changed_since_last_refresh" ? "alert" : ""
+    }`}
+  >
+    <strong>Guidance update status:</strong>{" "}
+    {item.updateStatus === "changed_since_last_refresh"
+      ? "Changed since last refresh — review recommendation wording."
+      : item.updateStatus === "new_watch_item"
+        ? "New monitored NITAG/guidance/schedule item."
+        : "No change detected."}
+    {item.sourceScope ? ` Source scope: ${item.sourceScope}.` : ""}
+  </div>
+) : null}
+
+<div className="signal">
+  <strong>Evidence signal:</strong> {item.evidenceSignal}
+</div>
 
       <p>{item.whyItMatters}</p>
 

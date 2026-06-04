@@ -21,6 +21,8 @@ export type EvidenceItem = {
   url: string;
   source: string;
   date: string;
+  sourceDate?: string | null;
+dateBasis?: string | null;
   jurisdiction: string;
   evidenceSignal: string;
   whyItMatters: string;
@@ -363,7 +365,16 @@ function EvidenceCard({ item }: { item: EvidenceItem }) {
           <span className="badge">{SOURCE_LABELS[item.sourceType]}</span>
           <span className="badge">{item.jurisdiction}</span>
         </div>
-        <time>{formatDate(item.date)}</time>
+        <div className="dateBlock">
+  <time>{formatDate(item.sourceDate || item.date)}</time>
+  {item.dateBasis ? (
+    <span>
+      {item.dateBasis === "source_page_date"
+        ? "Source date"
+        : "First seen / fallback date"}
+    </span>
+  ) : null}
+</div>
       </div>
 
       <h3>{item.title}</h3>

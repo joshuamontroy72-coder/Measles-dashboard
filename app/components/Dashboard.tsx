@@ -167,14 +167,15 @@ const stats = useMemo(() => {
         </div>
       </section>
 
-      <section className="statsGrid" aria-label="Dashboard summary">
-        <Stat label="Total records" value={stats.total} />
-        <Stat label="Pregnancy topic" value={stats.pregnancy} />
-        <Stat label="Dose-interval topic" value={stats.interval} />
-        <Stat label="Guidance pages" value={stats.guidance} />
-        <Stat label="Last 14 days" value={stats.recent} />
-        <Stat label="Canada-tagged" value={stats.canada} />
-      </section>
+<section className="statsGrid" aria-label="Dashboard summary">
+  <Stat label="Total records" value={stats.total} />
+  <Stat label="Pregnancy topic" value={stats.pregnancy} />
+  <Stat label="Dose-interval topic" value={stats.interval} />
+  <Stat label="Guidance pages" value={stats.guidance} />
+  <Stat label="Changed guidance" value={stats.changedGuidance} />
+  <Stat label="Last 14 days" value={stats.recent} />
+  <Stat label="Canada-tagged" value={stats.canada} />
+</section>
 
       <section className="briefingGrid">
         <div className="briefingCard">

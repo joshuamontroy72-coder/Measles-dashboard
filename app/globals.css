@@ -267,6 +267,11 @@ time {
   padding: 12px 14px;
   margin: 12px 0;
 }
+.signal.alert {
+  background: #fff4e5;
+  color: #9a4d00;
+  border-color: rgba(154, 77, 0, 0.25);
+}
 
 .card p {
   color: var(--muted);

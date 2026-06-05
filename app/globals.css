@@ -12,8 +12,6 @@
   --green-soft: #e8f7f1;
   --amber: #9a4d00;
   --amber-soft: #fff4e5;
-  --red: #b42318;
-  --red-soft: #fff1f0;
   --shadow: 0 14px 35px rgba(15, 23, 42, 0.08);
 }
 
@@ -69,17 +67,6 @@ main {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: 0.78rem;
-}
-.dateBlock {
-  display: grid;
-  gap: 3px;
-  text-align: right;
-}
-
-.dateBlock span {
-  color: var(--muted);
-  font-size: 0.75rem;
-  font-weight: 700;
 }
 
 h1 {
@@ -359,10 +346,24 @@ input {
   background: var(--blue-soft);
 }
 
-time {
+.dateBlock {
+  display: grid;
+  gap: 3px;
+  text-align: right;
+  min-width: 145px;
+}
+
+.dateBlock time {
   white-space: nowrap;
-  color: var(--muted);
+  color: var(--ink);
   font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.dateBlock span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
 }
 
 .card h3 {
@@ -443,6 +444,10 @@ summary {
 
   .cardTop {
     flex-direction: column;
+  }
+
+  .dateBlock {
+    text-align: left;
   }
 
   .worldMap text {

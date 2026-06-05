@@ -22,10 +22,9 @@ export type EvidenceItem = {
   source: string;
   date: string;
   sourceDate?: string | null;
-publishedDate?: string | null;
-modifiedDate?: string | null;
-dateBasis?: string | null;
-dateBasis?: string | null;
+  publishedDate?: string | null;
+  modifiedDate?: string | null;
+  dateBasis?: string | null;
   jurisdiction: string;
   evidenceSignal: string;
   whyItMatters: string;
@@ -101,6 +100,17 @@ function daysSince(value?: string | null) {
   return Math.floor((Date.now() - d.getTime()) / 86_400_000);
 }
 
+function dateLabel(item: EvidenceItem) {
+  if (item.dateBasis === "published_date") return "Published";
+  if (item.dateBasis === "modified_date") return "Modified";
+  if (item.dateBasis === "first_seen_or_fetch_date") return "First seen / fallback";
+  return "Source date";
+}
+
+function displayDate(item: EvidenceItem) {
+  return item.publishedDate || item.sourceDate || item.date;
+}
+
 function isCanada(jurisdiction = "") {
   return /canada|ontario|quebec|québec|alberta|british columbia|manitoba|saskatchewan|nova scotia|new brunswick|newfoundland|prince edward island|yukon|nunavut|northwest territories/i.test(jurisdiction);
 }
@@ -134,7 +144,7 @@ function sortEvidence(a: EvidenceItem, b: EvidenceItem) {
   const scoreDiff = Number(b.priorityScore || 0) - Number(a.priorityScore || 0);
   if (scoreDiff !== 0) return scoreDiff;
 
-  return String(b.date).localeCompare(String(a.date));
+  return String(displayDate(b)).localeCompare(String(displayDate(a)));
 }
 
 export default function Dashboard({ data }: { data: EvidenceData }) {
@@ -206,7 +216,7 @@ export default function Dashboard({ data }: { data: EvidenceData }) {
       changedGuidance: visibleItems.filter(
         (i) => i.sourceType === "guidance" && i.updateStatus === "changed_since_last_refresh"
       ).length,
-      recent: visibleItems.filter((i) => daysSince(i.date) <= 14).length
+      recent: visibleItems.filter((i) => daysSince(displayDate(i)) <= 14).length
     };
   }, [visibleItems, rawItems]);
 
@@ -230,8 +240,8 @@ export default function Dashboard({ data }: { data: EvidenceData }) {
           <h2>Canada first</h2>
           <p>
             Canadian national, provincial, and territorial public health updates
-            are ranked ahead of other records. Static guidance pages are hidden
-            unless a content change is detected.
+            are ranked ahead of other records. Static guidance and older
+            background resources are hidden unless they are recent or changed.
           </p>
         </div>
       </section>
@@ -325,7 +335,7 @@ export default function Dashboard({ data }: { data: EvidenceData }) {
             <strong>{visibleItems.length}</strong> visible records.{" "}
             <span className="muted">
               {rawItems.length - visibleItems.length} monitored baseline records
-              are hidden, mostly unchanged guidance pages.
+              are hidden, mostly unchanged guidance or older background pages.
             </span>
           </p>
         </div>
@@ -368,16 +378,12 @@ function EvidenceCard({ item }: { item: EvidenceItem }) {
           <span className="badge">{SOURCE_LABELS[item.sourceType]}</span>
           <span className="badge">{item.jurisdiction}</span>
         </div>
+
         <div className="dateBlock">
-  <time>{formatDate(item.sourceDate || item.date)}</time>
-  {item.dateBasis ? (
-    <span>
-      {item.dateBasis === "source_page_date"
-        ? "Source date"
-        : "First seen / fallback date"}
-    </span>
-  ) : null}
-</div>
+          <time>{formatDate(displayDate(item))}</time>
+          <span>{dateLabel(item)}</span>
+          {item.firstSeenAt ? <span>First seen: {formatDate(item.firstSeenAt)}</span> : null}
+        </div>
       </div>
 
       <h3>{item.title}</h3>

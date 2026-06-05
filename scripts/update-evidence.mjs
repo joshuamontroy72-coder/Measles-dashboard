@@ -358,8 +358,6 @@ function isRecentDate(value, days = LOOKBACK_DAYS) {
 function extractSourceDates(html = "", fallback = null) {
   const text = String(html);
 
-  const dateValue =
-    '([^"\\']+|\\d{4}-\\d{2}-\\d{2}|[A-Z][a-z]+ \\d{1,2}, \\d{4})';
 
   const publishedPatterns = [
     /<meta[^>]+property=["']article:published_time["'][^>]+content=["']([^"']+)["']/i,

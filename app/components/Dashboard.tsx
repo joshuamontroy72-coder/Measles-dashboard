@@ -22,6 +22,9 @@ export type EvidenceItem = {
   source: string;
   date: string;
   sourceDate?: string | null;
+publishedDate?: string | null;
+modifiedDate?: string | null;
+dateBasis?: string | null;
 dateBasis?: string | null;
   jurisdiction: string;
   evidenceSignal: string;

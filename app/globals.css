@@ -12,6 +12,8 @@
   --green-soft: #e8f7f1;
   --amber: #9a4d00;
   --amber-soft: #fff4e5;
+  --red: #b42318;
+  --red-soft: #fff1f0;
   --shadow: 0 14px 35px rgba(15, 23, 42, 0.08);
 }
 
@@ -48,8 +50,7 @@ main {
 .briefingCard,
 .card,
 .controls,
-.resultsHeader,
-.mapSection {
+.resultsHeader {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 22px;
@@ -114,7 +115,7 @@ h3 {
 
 .statsGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
   gap: 14px;
   margin-bottom: 24px;
 }
@@ -160,95 +161,16 @@ h3 {
   line-height: 1.6;
 }
 
-.mapSection {
-  padding: 24px;
-  margin-bottom: 24px;
-}
-
-.mapHeader h2,
-.mapHeader p {
-  margin: 0;
-}
-
-.mapHeader p {
-  color: var(--muted);
-  margin-top: 4px;
-}
-
-.mapGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.8fr) minmax(240px, 0.7fr);
-  gap: 18px;
-  margin-top: 18px;
-}
-
-.worldMap {
-  width: 100%;
-  height: auto;
-  display: block;
-}
-
-.worldMap rect {
-  fill: #eef3fb;
-}
-
-.worldMap path {
-  fill: #d8e2f0;
-  stroke: #c5d1e1;
-  stroke-width: 2;
-}
-
-.worldMap text {
-  font-size: 20px;
-  font-weight: 800;
-  fill: #334155;
-}
-
-.mapDot {
-  fill: rgba(36, 87, 197, 0.72);
-  stroke: white;
-  stroke-width: 4;
-}
-
-.canadaDot {
-  fill: rgba(17, 107, 79, 0.82);
-}
-
-.mapList {
-  display: grid;
-  gap: 10px;
-  align-content: start;
-}
-
-.mapListItem {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  border: 1px solid var(--line);
-  background: #fff;
-  border-radius: 14px;
-  padding: 12px 14px;
-}
-
-.mapListItem span {
-  color: var(--muted);
-}
-
-.mapListItem strong {
-  color: var(--ink);
-}
-
-.canadaListItem {
-  border-color: rgba(17, 107, 79, 0.25);
-  background: var(--green-soft);
-}
-
 .controls {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1.5fr;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
   padding: 18px;
   margin-bottom: 18px;
+}
+
+.searchBox {
+  grid-column: 1 / -1;
 }
 
 label {
@@ -346,6 +268,21 @@ input {
   background: var(--blue-soft);
 }
 
+.importance-high-priority {
+  color: var(--red);
+  background: var(--red-soft);
+}
+
+.importance-moderate-priority {
+  color: var(--amber);
+  background: var(--amber-soft);
+}
+
+.importance-routine-signal {
+  color: #374151;
+  background: #f3f4f6;
+}
+
 .dateBlock {
   display: grid;
   gap: 3px;
@@ -375,6 +312,22 @@ input {
 .source {
   color: var(--muted);
   margin: 0 0 12px;
+}
+
+.importanceBox {
+  display: grid;
+  gap: 4px;
+  background: #f8fafc;
+  color: #334155;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin: 12px 0;
+}
+
+.importanceBox span {
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 .signal {
@@ -433,13 +386,16 @@ summary {
 
 @media (max-width: 900px) {
   .hero,
-  .briefingGrid,
-  .mapGrid {
+  .briefingGrid {
     grid-template-columns: 1fr;
   }
 
   .controls {
     grid-template-columns: 1fr;
+  }
+
+  .searchBox {
+    grid-column: auto;
   }
 
   .cardTop {
@@ -448,9 +404,5 @@ summary {
 
   .dateBlock {
     text-align: left;
-  }
-
-  .worldMap text {
-    font-size: 16px;
   }
 }

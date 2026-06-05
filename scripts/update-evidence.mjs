@@ -345,7 +345,87 @@ function normalizeDate(value) {
   const year = s.match(/\b(19|20)\d{2}\b/)?.[0];
   return year ? `${year}-01-01` : isoDate(NOW);
 }
+function isRecentDate(value, days = LOOKBACK_DAYS) {
+  if (!value) return false;
 
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return false;
+
+  const ageDays = Math.floor((NOW.getTime() - d.getTime()) / 86_400_000);
+  return ageDays >= 0 && ageDays <= days;
+}
+
+function extractSourceDates(html = "", fallback = null) {
+  const text = String(html);
+
+  const publishedPatterns = [
+    /<meta[^>]+property=["']article:published_time["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+name=["']dcterms\.created["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+name=["']created["'][^>]+content=["']([^"']+)["']/i,
+    /"datePublished"\s*:\s*"([^"]+)"/i,
+    /\b(?:Published|Date posted|Date created|Created|Issued)[:\s]+([A-Z][a-z]+ \d{1,2}, \d{4})/i,
+    /\b(?:Published|Date posted|Date created|Created|Issued)[:\s]+(\d{4}-\d{2}-\d{2})/i
+  ];
+
+  const modifiedPatterns = [
+    /<meta[^>]+property=["']article:modified_time["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+name=["']dcterms\.modified["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+name=["']modified["'][^>]+content=["']([^"']+)["']/i,
+    /"dateModified"\s*:\s*"([^"]+)"/i,
+    /<time[^>]+datetime=["']([^"']+)["']/i,
+    /\b(?:Updated|Last updated|Modified|Date modified)[:\s]+([A-Z][a-z]+ \d{1,2}, \d{4})/i,
+    /\b(?:Updated|Last updated|Modified|Date modified)[:\s]+(\d{4}-\d{2}-\d{2})/i
+  ];
+
+  const findDate = (patterns) => {
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match?.[1]) return normalizeDate(match[1]);
+    }
+    return null;
+  };
+
+  return {
+    publishedDate: findDate(publishedPatterns),
+    modifiedDate: findDate(modifiedPatterns) || (fallback ? normalizeDate(fallback) : null)
+  };
+}
+
+function chooseSourceDate(dates) {
+  return dates.publishedDate || dates.modifiedDate || null;
+}
+
+function chooseDateBasis(dates) {
+  if (dates.publishedDate) return "published_date";
+  if (dates.modifiedDate) return "modified_date";
+  return "first_seen_or_fetch_date";
+}
+
+function shouldDisplayCanadianLinkedItem({ title = "", url = "", dates }) {
+  const text = `${title} ${url}`;
+
+  /*
+    Rule:
+    - If the source has a published/created date, use that as the main freshness filter.
+    - This prevents old resources, such as 2025 background PDFs/pages, from appearing
+      just because the parent page or metadata changed recently.
+    - If no published date exists, fall back to modified date.
+  */
+
+  if (dates.publishedDate) {
+    return isRecentDate(dates.publishedDate);
+  }
+
+  if (dates.modifiedDate) {
+    return isRecentDate(dates.modifiedDate);
+  }
+
+  /*
+    If there is no date at all but the title looks like an active outbreak,
+    exposure notice, surveillance report, or epi summary, show it for review.
+  */
+  return /outbreak|exposure|case|surveillance|epi|summary|report|alert|advisory/i.test(text);
+}
 function hasMeaslesSignal(text = "") {
   return /measles|morbilli|MMR|MMRV|rougeole|masern|ROR/i.test(text);
 }
@@ -467,7 +547,16 @@ function makeItem(raw) {
   const text = `${title} ${raw.abstract || ""} ${raw.source || ""} ${url}`;
   const silos = raw.silos || detectSilos(text, raw.topic || "general");
   const jurisdiction = raw.jurisdiction || inferJurisdiction(`${title} ${raw.source} ${url}`);
-  const topic = raw.topic || (silos.includes("pregnancy") ? "pregnancy" : silos.includes("interval") ? "interval" : "general");
+  const topic =
+    raw.topic ||
+    (silos.includes("pregnancy")
+      ? "pregnancy"
+      : silos.includes("interval")
+        ? "interval"
+        : "general");
+
+  const normalizedDate = normalizeDate(raw.date);
+  const sourceDate = raw.sourceDate ? normalizeDate(raw.sourceDate) : normalizedDate;
 
   const item = {
     id,
@@ -478,9 +567,17 @@ function makeItem(raw) {
     title,
     url,
     source: clamp(raw.source || "Unknown source", 180),
-    date: normalizeDate(raw.date),
+
+    /*
+      date is still used for sorting.
+      sourceDate/publishedDate/modifiedDate/dateBasis explain what the date means.
+    */
+    date: normalizedDate,
+    sourceDate,
+    publishedDate: raw.publishedDate ? normalizeDate(raw.publishedDate) : null,
+    modifiedDate: raw.modifiedDate ? normalizeDate(raw.modifiedDate) : null,
     dateBasis: raw.dateBasis || "source_or_fallback_date",
-    sourceDate: raw.sourceDate ? normalizeDate(raw.sourceDate) : normalizeDate(raw.date),
+
     jurisdiction,
     evidenceSignal: raw.evidenceSignal || inferSignal(topic, title, raw.abstract),
     whyItMatters: clamp(raw.whyItMatters || inferSignal(topic, title, raw.abstract), 560),
@@ -826,64 +923,81 @@ async function fetchCanadianPublicHealthSources() {
 
   for (const source of CANADIAN_PUBLIC_HEALTH_SOURCES) {
     const result = await safe(`Canadian public health ${source.name}`, async () => {
-      const { text, lastModified } = await fetchText(source.url);
+      const { text } = await fetchText(source.url);
+
       const links = extractLinksFromHtml(text, source.url)
         .filter((link) => hasMeaslesSignal(`${link.title} ${link.url}`))
+        .filter((link, index, arr) => arr.findIndex((x) => x.url === link.url) === index)
         .slice(0, 75);
 
-      const sourcePageItem = hasMeaslesSignal(`${source.name} ${source.url}`)
-        ? [
+      const linkedItems = [];
+
+      for (const link of links) {
+        const linkedResult = await safe(`Canadian linked page ${link.url}`, async () => {
+          const linkedFetched = await fetchText(link.url);
+
+          const linkedTitle =
+            extractHtmlTitle(linkedFetched.text) ||
+            link.title ||
+            source.name;
+
+          const dates = extractSourceDates(
+            linkedFetched.text,
+            linkedFetched.lastModified
+          );
+
+          const sourceDate = chooseSourceDate(dates);
+          const dateBasis = chooseDateBasis(dates);
+
+          const displayInDashboard = shouldDisplayCanadianLinkedItem({
+            title: linkedTitle,
+            url: link.url,
+            dates
+          });
+
+          const topic = inferTopicForNews(linkedTitle, link.url);
+
+          return [
             makeItem({
-              topic: "general",
-              sourceType: "outbreak",
-              title: source.name,
-              url: source.url,
+              topic,
+              sourceType: /outbreak|surveillance|exposure|case|epi|summary|report|alert|advisory/i.test(
+                `${linkedTitle} ${link.url}`
+              )
+                ? "outbreak"
+                : "news",
+              title: linkedTitle,
+              url: link.url,
               source: source.name,
-              date: lastModified || isoDate(NOW),
+
+              /*
+                Important:
+                If the source has a real published date, use it.
+                This stops old resources from looking newly published.
+              */
+              date: sourceDate || isoDate(NOW),
+              sourceDate: sourceDate || null,
+              publishedDate: dates.publishedDate || null,
+              modifiedDate: dates.modifiedDate || null,
+              dateBasis,
+
+              displayInDashboard,
+
               jurisdiction: source.jurisdiction,
-              queryTag: "Canadian public health source",
-              whyItMatters: "Canadian public health measles source monitored for outbreak updates, epi summaries, exposure notices, surveillance changes, and immunization program information."
+              queryTag: displayInDashboard
+                ? "Canadian public health linked update"
+                : "Canadian public health monitored older/background item",
+              whyItMatters: displayInDashboard
+                ? "Canadian provincial/territorial or national public health measles update. Prioritize review for Canadian situational awareness."
+                : "Canadian public health measles resource is monitored but hidden from the main dashboard because its source date is outside the active lookback window."
             })
-          ]
-        : [];
+          ];
+        });
 
-const linkedItems = [];
+        linkedItems.push(...linkedResult);
+        await sleep(150);
+      }
 
-for (const link of links) {
-  const linkedResult = await safe(`Canadian linked page ${link.url}`, async () => {
-    const linkedFetched = await fetchText(link.url);
-    const linkedTitle = extractHtmlTitle(linkedFetched.text) || link.title || source.name;
-
-    const sourceDate =
-      extractSourceDate(linkedFetched.text, linkedFetched.lastModified) ||
-      extractSourceDate(text, lastModified);
-
-    const topic = inferTopicForNews(linkedTitle, link.url);
-
-    return [
-      makeItem({
-        topic,
-        sourceType: /outbreak|surveillance|exposure|case|epi|summary|report/i.test(`${linkedTitle} ${link.url}`)
-          ? "outbreak"
-          : "news",
-        title: linkedTitle,
-        url: link.url,
-        source: source.name,
-        date: sourceDate || isoDate(NOW),
-        sourceDate: sourceDate || null,
-        dateBasis: sourceDate ? "source_page_date" : "first_seen_or_fetch_date",
-        jurisdiction: source.jurisdiction,
-        queryTag: "Canadian public health linked update",
-        whyItMatters: "Canadian provincial/territorial or national public health measles update. Prioritize review for Canadian situational awareness."
-      })
-    ];
-  });
-
-  linkedItems.push(...linkedResult);
-  await sleep(150);
-}
-
-      return [...sourcePageItem, ...linkedItems];
+      return linkedItems;
     });
 
     items.push(...result);
@@ -919,28 +1033,38 @@ function extractHtmlTitle(html) {
   return match ? cleanText(match[1]) : "";
 }
 
-function extractSourceDate(html = "", fallback = null) {
+function extractSourceDates(html = "", fallback = null) {
   const text = String(html);
 
-  const patterns = [
+  const publishedPatterns = [
     /<meta[^>]+property=["']article:published_time["'][^>]+content=["']([^"']+)["']/i,
-    /<meta[^>]+property=["']article:modified_time["'][^>]+content=["']([^"']+)["']/i,
-    /<meta[^>]+name=["']date["'][^>]+content=["']([^"']+)["']/i,
     /<meta[^>]+name=["']dcterms\.created["'][^>]+content=["']([^"']+)["']/i,
-    /<meta[^>]+name=["']dcterms\.modified["'][^>]+content=["']([^"']+)["']/i,
     /"datePublished"\s*:\s*"([^"]+)"/i,
-    /"dateModified"\s*:\s*"([^"]+)"/i,
-    /<time[^>]+datetime=["']([^"']+)["']/i,
-    /\b(?:Updated|Last updated|Published|Date posted)[:\s]+([A-Z][a-z]+ \d{1,2}, \d{4})/i,
-    /\b(?:Updated|Last updated|Published|Date posted)[:\s]+(\d{4}-\d{2}-\d{2})/i
+    /\b(?:Published|Date posted|Issued)[:\s]+([A-Z][a-z]+ \d{1,2}, \d{4})/i,
+    /\b(?:Published|Date posted|Issued)[:\s]+(\d{4}-\d{2}-\d{2})/i
   ];
 
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (match?.[1]) return normalizeDate(match[1]);
-  }
+  const modifiedPatterns = [
+    /<meta[^>]+property=["']article:modified_time["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+name=["']dcterms\.modified["'][^>]+content=["']([^"']+)["']/i,
+    /"dateModified"\s*:\s*"([^"]+)"/i,
+    /<time[^>]+datetime=["']([^"']+)["']/i,
+    /\b(?:Updated|Last updated|Modified)[:\s]+([A-Z][a-z]+ \d{1,2}, \d{4})/i,
+    /\b(?:Updated|Last updated|Modified)[:\s]+(\d{4}-\d{2}-\d{2})/i
+  ];
 
-  return fallback ? normalizeDate(fallback) : null;
+  const findDate = (patterns) => {
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match?.[1]) return normalizeDate(match[1]);
+    }
+    return null;
+  };
+
+  return {
+    publishedDate: findDate(publishedPatterns),
+    modifiedDate: findDate(modifiedPatterns) || (fallback ? normalizeDate(fallback) : null)
+  };
 }
 
 function normalizeForFingerprint(text, contentType = "") {

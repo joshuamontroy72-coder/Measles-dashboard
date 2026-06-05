@@ -68,18 +68,17 @@ const SOURCE_LABELS: Record<string, string> = {
   outbreak: "Outbreak / surveillance"
 };
 
-const COUNTRY_POINTS: Record<string, { label: string; lat: number; lon: number }> = {
-  Canada: { label: "Canada", lat: 58, lon: -106 },
-  "United States": { label: "United States", lat: 39, lon: -98 },
-  "United Kingdom": { label: "United Kingdom", lat: 55, lon: -3 },
-  France: { label: "France", lat: 46, lon: 2 },
-  Germany: { label: "Germany", lat: 51, lon: 10 },
-  Ireland: { label: "Ireland", lat: 53, lon: -8 },
-  Australia: { label: "Australia", lat: -25, lon: 134 },
-  Europe: { label: "Europe", lat: 50, lon: 12 },
-  Americas: { label: "Americas", lat: 5, lon: -75 },
-  Global: { label: "Global / WHO", lat: 15, lon: 0 },
-  International: { label: "International", lat: 0, lon: 0 }
+const SORT_LABELS: Record<string, string> = {
+  default: "Default: Canada + importance",
+  newest: "Date: newest first",
+  oldest: "Date: oldest first",
+  importance: "Importance: highest first",
+  canada: "Canada first",
+  sourceType: "Source type A–Z",
+  jurisdiction: "Jurisdiction A–Z",
+  pregnancy: "Pregnancy silo first",
+  interval: "Dose-interval silo first",
+  guidance: "Guidance changes first"
 };
 
 function formatDate(value?: string | null) {
@@ -119,51 +118,129 @@ function isCanadianProvince(jurisdiction = "") {
   return /ontario|quebec|québec|alberta|british columbia|manitoba|saskatchewan|nova scotia|new brunswick|newfoundland|prince edward island|yukon|nunavut|northwest territories/i.test(jurisdiction);
 }
 
-function countryKey(jurisdiction = "") {
-  if (isCanada(jurisdiction)) return "Canada";
-  if (/united states|usa|u\.s\./i.test(jurisdiction)) return "United States";
-  if (/united kingdom|uk/i.test(jurisdiction)) return "United Kingdom";
-  if (/france/i.test(jurisdiction)) return "France";
-  if (/germany/i.test(jurisdiction)) return "Germany";
-  if (/ireland/i.test(jurisdiction)) return "Ireland";
-  if (/australia/i.test(jurisdiction)) return "Australia";
-  if (/europe/i.test(jurisdiction)) return "Europe";
-  if (/americas|paho/i.test(jurisdiction)) return "Americas";
-  if (/global|who|sage/i.test(jurisdiction)) return "Global";
-  return "International";
-}
-
 function hasSilo(item: EvidenceItem, silo: EvidenceTopic) {
   return item.topic === silo || item.silos?.includes(silo);
 }
 
-function sortEvidence(a: EvidenceItem, b: EvidenceItem) {
-  const canadaDiff = Number(isCanada(b.jurisdiction)) - Number(isCanada(a.jurisdiction));
-  if (canadaDiff !== 0) return canadaDiff;
+function changedGuidance(item: EvidenceItem) {
+  return item.sourceType === "guidance" && item.updateStatus === "changed_since_last_refresh";
+}
 
-  const scoreDiff = Number(b.priorityScore || 0) - Number(a.priorityScore || 0);
-  if (scoreDiff !== 0) return scoreDiff;
+function operationalImportanceScore(item: EvidenceItem) {
+  if (typeof item.priorityScore === "number") return item.priorityScore;
 
+  let score = 0;
+
+  if (changedGuidance(item)) score += 120;
+  if (isCanadianProvince(item.jurisdiction)) score += 100;
+  else if (isCanada(item.jurisdiction)) score += 85;
+
+  if (hasSilo(item, "pregnancy")) score += 35;
+  if (hasSilo(item, "interval")) score += 35;
+
+  if (item.sourceType === "outbreak") score += 30;
+  if (item.sourceType === "news") score += 15;
+  if (item.sourceType === "publication" || item.sourceType === "preprint") score += 10;
+
+  if (daysSince(displayDate(item)) <= 14) score += 10;
+
+  return score;
+}
+
+function importanceLabel(score: number) {
+  if (score >= 150) return "High priority";
+  if (score >= 90) return "Moderate priority";
+  return "Routine signal";
+}
+
+function importanceReasons(item: EvidenceItem) {
+  const reasons: string[] = [];
+
+  if (changedGuidance(item)) reasons.push("changed guidance");
+  if (isCanadianProvince(item.jurisdiction)) reasons.push("Canadian provincial/territorial");
+  else if (isCanada(item.jurisdiction)) reasons.push("Canada");
+  if (item.sourceType === "outbreak") reasons.push("outbreak/surveillance");
+  if (hasSilo(item, "pregnancy")) reasons.push("pregnancy silo");
+  if (hasSilo(item, "interval")) reasons.push("dose-interval silo");
+  if (daysSince(displayDate(item)) <= 14) reasons.push("recent");
+
+  return reasons.length ? reasons.join(", ") : "general measles signal";
+}
+
+function compareDateDesc(a: EvidenceItem, b: EvidenceItem) {
   return String(displayDate(b)).localeCompare(String(displayDate(a)));
+}
+
+function compareDateAsc(a: EvidenceItem, b: EvidenceItem) {
+  return String(displayDate(a)).localeCompare(String(displayDate(b)));
+}
+
+function sortEvidence(items: EvidenceItem[], sortBy: string) {
+  return [...items].sort((a, b) => {
+    if (sortBy === "newest") return compareDateDesc(a, b);
+    if (sortBy === "oldest") return compareDateAsc(a, b);
+
+    if (sortBy === "importance") {
+      const diff = operationalImportanceScore(b) - operationalImportanceScore(a);
+      return diff || compareDateDesc(a, b);
+    }
+
+    if (sortBy === "canada") {
+      const canadaDiff = Number(isCanada(b.jurisdiction)) - Number(isCanada(a.jurisdiction));
+      return canadaDiff || compareDateDesc(a, b);
+    }
+
+    if (sortBy === "sourceType") {
+      const diff = a.sourceType.localeCompare(b.sourceType);
+      return diff || compareDateDesc(a, b);
+    }
+
+    if (sortBy === "jurisdiction") {
+      const diff = a.jurisdiction.localeCompare(b.jurisdiction);
+      return diff || compareDateDesc(a, b);
+    }
+
+    if (sortBy === "pregnancy") {
+      const diff = Number(hasSilo(b, "pregnancy")) - Number(hasSilo(a, "pregnancy"));
+      return diff || compareDateDesc(a, b);
+    }
+
+    if (sortBy === "interval") {
+      const diff = Number(hasSilo(b, "interval")) - Number(hasSilo(a, "interval"));
+      return diff || compareDateDesc(a, b);
+    }
+
+    if (sortBy === "guidance") {
+      const diff = Number(changedGuidance(b)) - Number(changedGuidance(a));
+      return diff || compareDateDesc(a, b);
+    }
+
+    const canadaDiff = Number(isCanada(b.jurisdiction)) - Number(isCanada(a.jurisdiction));
+    if (canadaDiff !== 0) return canadaDiff;
+
+    const scoreDiff = operationalImportanceScore(b) - operationalImportanceScore(a);
+    if (scoreDiff !== 0) return scoreDiff;
+
+    return compareDateDesc(a, b);
+  });
 }
 
 export default function Dashboard({ data }: { data: EvidenceData }) {
   const [topic, setTopic] = useState("all");
   const [sourceType, setSourceType] = useState("all");
   const [jurisdiction, setJurisdiction] = useState("all");
+  const [sortBy, setSortBy] = useState("default");
   const [query, setQuery] = useState("");
 
   const rawItems = data.items || [];
 
   const visibleItems = useMemo(() => {
-    return rawItems
-      .filter((item) => {
-        if (item.sourceType === "guidance") {
-          return item.updateStatus === "changed_since_last_refresh" && item.displayInDashboard !== false;
-        }
-        return item.displayInDashboard !== false;
-      })
-      .sort(sortEvidence);
+    return rawItems.filter((item) => {
+      if (item.sourceType === "guidance") {
+        return changedGuidance(item) && item.displayInDashboard !== false;
+      }
+      return item.displayInDashboard !== false;
+    });
   }, [rawItems]);
 
   const jurisdictions = useMemo(() => {
@@ -176,7 +253,7 @@ export default function Dashboard({ data }: { data: EvidenceData }) {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
 
-    return visibleItems.filter((item) => {
+    const filteredItems = visibleItems.filter((item) => {
       if (topic === "canada" && !isCanada(item.jurisdiction)) return false;
       if (topic === "pregnancy" && !hasSilo(item, "pregnancy")) return false;
       if (topic === "interval" && !hasSilo(item, "interval")) return false;
@@ -203,7 +280,9 @@ export default function Dashboard({ data }: { data: EvidenceData }) {
 
       return true;
     });
-  }, [visibleItems, topic, sourceType, jurisdiction, query]);
+
+    return sortEvidence(filteredItems, sortBy);
+  }, [visibleItems, topic, sourceType, jurisdiction, sortBy, query]);
 
   const stats = useMemo(() => {
     return {
@@ -213,9 +292,8 @@ export default function Dashboard({ data }: { data: EvidenceData }) {
       canadianProvincial: visibleItems.filter((i) => isCanadianProvince(i.jurisdiction)).length,
       pregnancy: visibleItems.filter((i) => hasSilo(i, "pregnancy")).length,
       interval: visibleItems.filter((i) => hasSilo(i, "interval")).length,
-      changedGuidance: visibleItems.filter(
-        (i) => i.sourceType === "guidance" && i.updateStatus === "changed_since_last_refresh"
-      ).length,
+      changedGuidance: visibleItems.filter(changedGuidance).length,
+      highPriority: visibleItems.filter((i) => operationalImportanceScore(i) >= 150).length,
       recent: visibleItems.filter((i) => daysSince(displayDate(i)) <= 14).length
     };
   }, [visibleItems, rawItems]);
@@ -252,6 +330,7 @@ export default function Dashboard({ data }: { data: EvidenceData }) {
         <Stat label="Prov/Terr records" value={stats.canadianProvincial} />
         <Stat label="Pregnancy silo" value={stats.pregnancy} />
         <Stat label="Dose-interval silo" value={stats.interval} />
+        <Stat label="High priority" value={stats.highPriority} />
         <Stat label="Changed guidance" value={stats.changedGuidance} />
         <Stat label="Last 14 days" value={stats.recent} />
       </section>
@@ -267,15 +346,14 @@ export default function Dashboard({ data }: { data: EvidenceData }) {
         </div>
 
         <div className="briefingCard">
-          <h2>Two priority research silos</h2>
+          <h2>Operational importance</h2>
           <p>
-            Items are tagged when they are relevant to pregnancy / exposure
-            management or dose interval / accelerated schedule questions.
+            Importance is a triage score based on Canadian relevance, outbreak or
+            surveillance signal, recency, changed guidance, and pregnancy or
+            dose-interval relevance. It is not an Altmetric score.
           </p>
         </div>
       </section>
-
-      <SourceMap items={visibleItems} />
 
       <section className="controls" aria-label="Evidence filters">
         <label>
@@ -312,6 +390,17 @@ export default function Dashboard({ data }: { data: EvidenceData }) {
             {jurisdictions.map((j) => (
               <option key={j} value={j}>
                 {j === "all" ? "All jurisdictions" : j}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Sort by
+          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+            {Object.entries(SORT_LABELS).map(([key, label]) => (
+              <option key={key} value={key}>
+                {label}
               </option>
             ))}
           </select>
@@ -365,11 +454,16 @@ function Stat({ label, value }: { label: string; value: number }) {
 }
 
 function EvidenceCard({ item }: { item: EvidenceItem }) {
+  const score = operationalImportanceScore(item);
+
   return (
     <article className={`card ${isCanada(item.jurisdiction) ? "canadaCard" : ""}`}>
       <div className="cardTop">
         <div className="badges">
           {isCanada(item.jurisdiction) ? <span className="badge canadaBadge">Canada priority</span> : null}
+          <span className={`badge importance-${importanceLabel(score).toLowerCase().replaceAll(" ", "-")}`}>
+            {importanceLabel(score)}
+          </span>
           <span className={`badge topic-${item.topic}`}>
             {TOPIC_LABELS[item.topic] || "Measles"}
           </span>
@@ -392,6 +486,11 @@ function EvidenceCard({ item }: { item: EvidenceItem }) {
         {item.source}
         {item.queryTag ? ` · ${item.queryTag}` : ""}
       </p>
+
+      <div className="importanceBox">
+        <strong>Operational importance:</strong> {score} · {importanceLabel(score)}
+        <span>{importanceReasons(item)}</span>
+      </div>
 
       {item.sourceType === "guidance" && item.updateStatus === "changed_since_last_refresh" ? (
         <div className="signal alert">
@@ -420,76 +519,5 @@ function EvidenceCard({ item }: { item: EvidenceItem }) {
         </a>
       </div>
     </article>
-  );
-}
-
-function SourceMap({ items }: { items: EvidenceItem[] }) {
-  const counts = useMemo(() => {
-    const map = new Map<string, number>();
-
-    for (const item of items) {
-      const key = countryKey(item.jurisdiction);
-      map.set(key, (map.get(key) || 0) + 1);
-    }
-
-    return [...map.entries()]
-      .map(([key, count]) => ({
-        key,
-        count,
-        point: COUNTRY_POINTS[key] || COUNTRY_POINTS.International
-      }))
-      .sort((a, b) => b.count - a.count);
-  }, [items]);
-
-  const max = Math.max(1, ...counts.map((c) => c.count));
-
-  const project = (lat: number, lon: number) => ({
-    x: ((lon + 180) / 360) * 1000,
-    y: ((90 - lat) / 180) * 420
-  });
-
-  return (
-    <section className="mapSection">
-      <div className="mapHeader">
-        <div>
-          <h2>Global source map</h2>
-          <p>Approximate source distribution based on item jurisdiction.</p>
-        </div>
-      </div>
-
-      <div className="mapGrid">
-        <svg className="worldMap" viewBox="0 0 1000 420" role="img" aria-label="Global source map">
-          <rect x="0" y="0" width="1000" height="420" rx="24" />
-          <path d="M120 120 C180 80 260 80 310 130 C350 170 320 230 250 245 C180 260 100 220 120 120Z" />
-          <path d="M230 260 C300 250 360 300 340 360 C305 400 235 370 230 260Z" />
-          <path d="M445 105 C515 70 620 90 665 145 C720 215 645 270 555 250 C470 232 390 165 445 105Z" />
-          <path d="M690 140 C770 110 885 150 910 230 C860 270 740 260 700 210 C680 185 670 160 690 140Z" />
-          <path d="M735 290 C805 270 875 300 880 350 C820 390 750 360 735 290Z" />
-
-          {counts.map(({ key, count, point }) => {
-            const { x, y } = project(point.lat, point.lon);
-            const r = 8 + (count / max) * 26;
-
-            return (
-              <g key={key}>
-                <circle cx={x} cy={y} r={r} className={key === "Canada" ? "mapDot canadaDot" : "mapDot"} />
-                <text x={x + r + 5} y={y + 4}>
-                  {point.label} ({count})
-                </text>
-              </g>
-            );
-          })}
-        </svg>
-
-        <div className="mapList">
-          {counts.slice(0, 10).map(({ key, count, point }) => (
-            <div key={key} className={key === "Canada" ? "mapListItem canadaListItem" : "mapListItem"}>
-              <span>{point.label}</span>
-              <strong>{count}</strong>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
   );
 }

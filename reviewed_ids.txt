@@ -1,0 +1,2 @@
+# One record ID per line — records listed here get reviewed=true in the UI.
+# Add IDs after human review; lines starting with # are ignored.

@@ -163,15 +163,17 @@ function renderKPIs() {
   const total     = allRecords.length;
   const pregnancy = allRecords.filter(r => r.pregnancy_related).length;
   const canadian  = allRecords.filter(r => r.canadian).length;
-  const animal    = allRecords.filter(r => r.species === "animal").length;
-  const reviewed  = allRecords.filter(r => r.reviewed).length;
+  const nitag     = allRecords.filter(r => r.channel === "who_sage" || r.channel === "nitag").length;
+  const epi       = allRecords.filter(r => r.channel === "surveillance" && isTrustedEpiSource(r)).length;
+  const journals  = allRecords.filter(r => normType(r.source_type) === "journal_article").length;
 
   const tiles = [
-    { label: "Total records", value: total.toLocaleString(), sub: "all channels",          dot: null },
-    { label: "Pregnancy-related", value: pregnancy.toLocaleString(), sub: "MMR + infection", dot: "var(--pa-pregnancy-mmr)" },
-    { label: "Canadian evidence", value: canadian.toLocaleString(), sub: "PHAC/NACI/provincial", dot: "var(--canada)" },
-    { label: "Animal studies",   value: animal.toLocaleString(), sub: "in vitro + animal",   dot: "var(--t-trial)" },
-    { label: "Reviewed",         value: reviewed.toLocaleString(), sub: "marked by team",     dot: "var(--new)" },
+    { label: "Total records",       value: total.toLocaleString(),     sub: "all channels",            dot: null },
+    { label: "Pregnancy-related",   value: pregnancy.toLocaleString(), sub: "MMR + infection",         dot: "var(--pa-pregnancy-mmr)" },
+    { label: "Canadian evidence",   value: canadian.toLocaleString(),  sub: "PHAC/NACI/provincial",    dot: "var(--canada)" },
+    { label: "NITAG updates",       value: nitag.toLocaleString(),     sub: "WHO/SAGE + national",     dot: "var(--t-guideline)" },
+    { label: "Epi updates",         value: epi.toLocaleString(),       sub: "PHAC/WHO/CDC/ECDC/PHO",   dot: "var(--t-surveillance)" },
+    { label: "Journal publications",value: journals.toLocaleString(),  sub: "peer-reviewed",           dot: "var(--t-journal)" },
   ];
 
   document.getElementById("kpis").innerHTML = tiles.map(t => `
@@ -190,15 +192,31 @@ function renderKPIs() {
 // Situation banner
 // ---------------------------------------------------------------------------
 
+// Trusted epi agencies for situation banner
+const EPI_SOURCES = [
+  "phac", "aspc", "public health agency", "canada communicable disease",
+  "who", "world health organization", "paho",
+  "cdc", "centers for disease control", "mmwr",
+  "ecdc", "european centre for disease",
+  "public health ontario", "pho",
+  "public health england", "ukhsa",
+  "surveillance", "outbreak", "epidemiol",
+];
+
+function isTrustedEpiSource(r) {
+  const haystack = [r.source, r.journal, r.authors, r.title, r.url].join(" ").toLowerCase();
+  return EPI_SOURCES.some(k => haystack.includes(k));
+}
+
 function renderSituation() {
   const slot = document.getElementById("situation-slot");
 
-  const latest = allRecords.find(r =>
-    r.source_type === "outbreak_report" || r.source_type === "surveillance"
-  ) || allRecords.find(r =>
-    r.source_type === "guideline" &&
-    (r.channel === "who_sage" || (r.source || "").toLowerCase().includes("who"))
-  );
+  // Prefer records in the surveillance channel from a trusted agency
+  const latest =
+    allRecords.find(r => r.channel === "surveillance" && isTrustedEpiSource(r)) ||
+    allRecords.find(r => r.channel === "surveillance") ||
+    allRecords.find(r => r.channel === "who_sage") ||
+    allRecords.find(r => r.channel === "nitag" && isTrustedEpiSource(r));
 
   if (!latest) { slot.innerHTML = ""; return; }
 
@@ -242,7 +260,7 @@ function renderCoverage() {
   slot.innerHTML = `
     <details class="coverage" open>
       <summary>
-        <svg class="cov-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12h2M20 12h2M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/><circle cx="12" cy="12" r="4"/></svg>
+        <svg class="cov-ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12h2M20 12h2M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/><circle cx="12" cy="12" r="4"/></svg>
         <span class="cov-title">Source coverage</span>
         <span class="cov-badge ${badgeClass}">${esc(badgeText)}</span>
         <span class="cov-hint">${total.toLocaleString()} records total</span>

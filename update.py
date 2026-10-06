@@ -33,7 +33,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-ROOT = Path(__file__).parent
+ROOT = Path(__file__).parent.parent
 DATA_DIR = ROOT / "data"
 DATA_DIR.mkdir(exist_ok=True)
 
@@ -91,8 +91,10 @@ CHANNELS: list[dict] = [
 CHANNEL_IDS = {c["id"] for c in CHANNELS}
 
 # Human-readable source_type labels
+# NOTE: sources.py writes "journal_article"; both keys map to the same label
 SOURCE_TYPE_LABELS: dict[str, str] = {
     "journal":          "Journal article",
+    "journal_article":  "Journal article",   # canonical from sources.py
     "preprint":         "Preprint",
     "clinical_trial":   "Clinical trial",
     "guideline":        "Guideline / policy document",
@@ -155,7 +157,7 @@ def channel_of(rec: dict) -> str:
             return "who_sage"
         return "nitag"
 
-    if st == "journal":
+    if st in ("journal", "journal_article"):
         return "journals"
 
     # Fallbacks by URL / source
@@ -183,6 +185,15 @@ def _load_reviewed_ids() -> set[str]:
 
 def finalize(rec: dict, reviewed_ids: set[str]) -> dict:
     """Ensure all UI-required fields are present."""
+    # Normalize date field: sources.py uses "published_date", seed uses "date"
+    if not rec.get("date") and rec.get("published_date"):
+        rec["date"] = rec["published_date"]
+
+    # Normalize source_type: sources.py uses "journal_article", pipeline expects "journal"
+    # Keep original as published_source_type, normalize to canonical key
+    if rec.get("source_type") == "journal_article":
+        rec["source_type"] = "journal_article"  # keep as-is; channel_of() now handles both
+
     # Classification (idempotent)
     classify(rec)
 
@@ -348,9 +359,9 @@ def main(full: bool = False, no_enrich: bool = False) -> None:
     for rec in merged:
         finalize(rec, reviewed_ids)
 
-    # Sort: newest first (by date)
+    # Sort: newest first (by date). sources.py stores "published_date"; seed stores "date".
     def _sort_key(r: dict) -> str:
-        return r.get("date") or r.get("published") or "1900-01-01"
+        return r.get("date") or r.get("published_date") or r.get("published") or "1900-01-01"
 
     merged.sort(key=_sort_key, reverse=True)
 

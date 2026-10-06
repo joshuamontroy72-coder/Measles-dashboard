@@ -1,10 +1,8 @@
 /**
  * Measles Evidence Watch — frontend
- *
+ * Modelled on the Ebola Evidence Watch design system.
  * Reads data/evidence.json and data/coverage.json.
- * No build step — runs directly from the browser.
  */
-
 "use strict";
 
 // ---------------------------------------------------------------------------
@@ -14,14 +12,40 @@
 const PAGE_SIZE = 25;
 
 const POLICY_AREAS = [
-  { id: "pregnancy_mmr",       label: "MMR in pregnancy" },
-  { id: "pregnancy_infection", label: "Measles/rubella infection in pregnancy" },
-  { id: "schedule_timing",     label: "Second-dose timing" },
-  { id: "general_measles",     label: "General measles" },
+  { id: "all",                  label: "All areas",                             cdot: null },
+  { id: "pregnancy_mmr",        label: "MMR in pregnancy",                      cdot: "var(--pa-pregnancy-mmr)" },
+  { id: "pregnancy_infection",  label: "Measles/rubella infection in pregnancy", cdot: "var(--pa-pregnancy-infection)" },
+  { id: "schedule_timing",      label: "Second-dose timing",                    cdot: "var(--pa-schedule-timing)" },
+  { id: "general_measles",      label: "General measles",                       cdot: "var(--pa-general-measles)" },
 ];
 
-const SOURCE_TYPE_LABELS = {
+const CHANNELS = [
+  { id: "journals",     label: "Journals",          cdot: "var(--t-journal)" },
+  { id: "preprints",    label: "Preprints",          cdot: "var(--t-preprint)" },
+  { id: "trials",       label: "Clinical trials",    cdot: "var(--t-trial)" },
+  { id: "who_sage",     label: "WHO / SAGE",         cdot: "var(--t-guideline)" },
+  { id: "nitag",        label: "National NITAG",     cdot: "var(--t-guideline)" },
+  { id: "surveillance", label: "Surveillance",       cdot: "var(--t-surveillance)" },
+  { id: "news",         label: "News",               cdot: "var(--t-news)" },
+  { id: "press",        label: "Press releases",     cdot: "var(--t-press)" },
+];
+
+const SOURCE_TYPES = [
+  { id: "journal",         label: "Journal article" },
+  { id: "journal_article", label: "Journal article" },   // from sources.py
+  { id: "preprint",        label: "Preprint" },
+  { id: "clinical_trial",  label: "Clinical trial" },
+  { id: "guideline",       label: "Guideline" },
+  { id: "surveillance",    label: "Surveillance" },
+  { id: "outbreak_report", label: "Outbreak report" },
+  { id: "news",            label: "News" },
+  { id: "press_release",   label: "Press release" },
+];
+
+// Canonical source_type labels (normalised)
+const ST_LABEL = {
   journal:         "Journal article",
+  journal_article: "Journal article",
   preprint:        "Preprint",
   clinical_trial:  "Clinical trial",
   guideline:       "Guideline",
@@ -29,31 +53,80 @@ const SOURCE_TYPE_LABELS = {
   outbreak_report: "Outbreak report",
   news:            "News",
   press_release:   "Press release",
-  blog:            "Blog",
   other:           "Other",
+};
+
+// Type-dot colours for badge (match CSS vars)
+const ST_DOT = {
+  journal:         "var(--t-journal)",
+  journal_article: "var(--t-journal)",
+  preprint:        "var(--t-preprint)",
+  clinical_trial:  "var(--t-trial)",
+  guideline:       "var(--t-guideline)",
+  surveillance:    "var(--t-surveillance)",
+  outbreak_report: "var(--t-outbreak)",
+  news:            "var(--t-news)",
+  press_release:   "var(--t-press)",
 };
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
-let allRecords   = [];
-let coverage     = {};
-let filtered     = [];
-let currentPage  = 1;
+let allRecords  = [];
+let coverage    = {};
+let filtered    = [];
+let currentPage = 1;
 
 const state = {
-  search:     "",
-  policyArea: "all",
-  channel:    "all",
-  sourceType: "all",
-  species:    "all",
-  pregnancy:  false,
-  canadian:   false,
-  dateFrom:   "",
-  dateTo:     "",
-  sort:       "date_desc",
+  search:    "",
+  policy:    "all",       // radio — single select
+  channels:  new Set(),   // checkbox — multi-select (empty = all)
+  types:     new Set(),   // checkbox — multi-select (empty = all)
+  species:   "all",       // radio
+  pregnancy: false,
+  canadian:  false,
+  days:      "all",       // date-preset
+  sort:      "date_desc",
 };
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function recDate(r) {
+  return r.date || r.published_date || r.published || "";
+}
+
+function esc(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function fmtDate(s) {
+  if (!s) return "";
+  const d = new Date(s);
+  if (isNaN(d)) return s;
+  return d.toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" });
+}
+
+// ---------------------------------------------------------------------------
+// Theme toggle
+// ---------------------------------------------------------------------------
+
+(function initTheme() {
+  const stored = localStorage.getItem("theme");
+  if (stored) document.documentElement.setAttribute("data-theme", stored);
+})();
+
+document.getElementById("theme-toggle").addEventListener("click", () => {
+  const cur = document.documentElement.getAttribute("data-theme");
+  const next = cur === "dark" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  try { localStorage.setItem("theme", next); } catch(e) {}
+  document.getElementById("theme-toggle").textContent = next === "dark" ? "🌙" : "☀️";
+});
 
 // ---------------------------------------------------------------------------
 // Fetch data
@@ -69,225 +142,460 @@ async function loadData() {
     coverage   = covResp.ok ? await covResp.json() : {};
   } catch (err) {
     console.error("Failed to load data:", err);
-    document.getElementById("evidence-list").innerHTML =
-      `<div class="empty-state"><div class="empty-icon">⚠️</div>
-       <p>Could not load evidence data. Check console for details.</p></div>`;
+    document.getElementById("cards").innerHTML =
+      `<div class="empty"><div class="empty-icon">⚠️</div><h3>Could not load data</h3><p>Check the browser console for details.</p></div>`;
     return;
   }
 
-  renderCoveragePanel();
-  renderChannelFilters();
+  renderKPIs();
+  renderCoverage();
   renderSituation();
+  renderSidebar();
   applyFiltersAndRender();
-  updateMeta();
+  renderUpdatedStamp();
 }
 
 // ---------------------------------------------------------------------------
-// Situation banner — most recent outbreak_report OR surveillance item,
-// fallback to most recent WHO IRIS guideline
+// KPI tiles
+// ---------------------------------------------------------------------------
+
+function renderKPIs() {
+  const total     = allRecords.length;
+  const pregnancy = allRecords.filter(r => r.pregnancy_related).length;
+  const canadian  = allRecords.filter(r => r.canadian).length;
+  const animal    = allRecords.filter(r => r.species === "animal").length;
+  const reviewed  = allRecords.filter(r => r.reviewed).length;
+
+  const tiles = [
+    { label: "Total records", value: total.toLocaleString(), sub: "all channels",          dot: null },
+    { label: "Pregnancy-related", value: pregnancy.toLocaleString(), sub: "MMR + infection", dot: "var(--pa-pregnancy-mmr)" },
+    { label: "Canadian evidence", value: canadian.toLocaleString(), sub: "PHAC/NACI/provincial", dot: "var(--canada)" },
+    { label: "Animal studies",   value: animal.toLocaleString(), sub: "in vitro + animal",   dot: "var(--t-trial)" },
+    { label: "Reviewed",         value: reviewed.toLocaleString(), sub: "marked by team",     dot: "var(--new)" },
+  ];
+
+  document.getElementById("kpis").innerHTML = tiles.map(t => `
+    <div class="kpi">
+      <div class="label">
+        ${t.dot ? `<span class="dot" style="background:${t.dot}"></span>` : ""}
+        ${esc(t.label)}
+      </div>
+      <div class="value">${t.value}</div>
+      <div class="sub">${esc(t.sub)}</div>
+    </div>
+  `).join("");
+}
+
+// ---------------------------------------------------------------------------
+// Situation banner
 // ---------------------------------------------------------------------------
 
 function renderSituation() {
-  const banner = document.getElementById("situation-banner");
-  const text   = document.getElementById("situation-text");
-  const link   = document.getElementById("situation-link");
+  const slot = document.getElementById("situation-slot");
 
-  // Priority 1: outbreak_report or surveillance
-  let latest = allRecords.find(
-    (r) => r.source_type === "outbreak_report" || r.source_type === "surveillance"
+  const latest = allRecords.find(r =>
+    r.source_type === "outbreak_report" || r.source_type === "surveillance"
+  ) || allRecords.find(r =>
+    r.source_type === "guideline" &&
+    (r.channel === "who_sage" || (r.source || "").toLowerCase().includes("who"))
   );
 
-  // Priority 2: WHO / SAGE guideline
-  if (!latest) {
-    latest = allRecords.find(
-      (r) =>
-        r.source_type === "guideline" &&
-        (r.channel === "who_sage" || (r.source || "").toLowerCase().includes("who"))
-    );
+  if (!latest) { slot.innerHTML = ""; return; }
+
+  slot.innerHTML = `
+    <div class="situation" role="status" aria-live="polite">
+      <span class="pulse"></span>
+      <div class="body">
+        <div class="tag">Latest signal · ${fmtDate(recDate(latest))}</div>
+        <h3>${esc(latest.title || "(No title)")}</h3>
+        ${latest.summary ? `<p>${esc(latest.summary.slice(0, 200))}…</p>` : ""}
+      </div>
+      ${latest.url ? `<a href="${esc(latest.url)}" target="_blank" rel="noopener" style="white-space:nowrap;font-weight:600;font-size:13px;color:var(--brand)">↗ Open</a>` : ""}
+    </div>
+  `;
+}
+
+// ---------------------------------------------------------------------------
+// Source coverage panel
+// ---------------------------------------------------------------------------
+
+function renderCoverage() {
+  const slot = document.getElementById("coverage-slot");
+  if (!coverage.channels || !coverage.channels.length) { slot.innerHTML = ""; return; }
+
+  const total = coverage.total || allRecords.length;
+  const errors = (coverage.fetcher_log || []).filter(f => f.error).length;
+  const badgeClass = errors > 0 ? "warn" : "ok";
+  const badgeText  = errors > 0 ? `${errors} error${errors > 1 ? "s" : ""}` : `${coverage.channels.length} sources active`;
+
+  const items = coverage.channels.map(ch => {
+    const hasCount = ch.count > 0;
+    return `
+      <div class="cov-item ${hasCount ? "ok" : "watch"}">
+        <span class="cov-dot"></span>
+        <span class="cov-name">${esc(ch.icon || "")} ${esc(ch.label)}</span>
+        <span class="cov-nums">${ch.count.toLocaleString()}</span>
+      </div>
+    `;
+  }).join("");
+
+  slot.innerHTML = `
+    <details class="coverage" open>
+      <summary>
+        <svg class="cov-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12h2M20 12h2M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/><circle cx="12" cy="12" r="4"/></svg>
+        <span class="cov-title">Source coverage</span>
+        <span class="cov-badge ${badgeClass}">${esc(badgeText)}</span>
+        <span class="cov-hint">${total.toLocaleString()} records total</span>
+        <span class="cov-chev">▾</span>
+      </summary>
+      <div class="cov-grid">${items}</div>
+      <div class="cov-foot">Last refreshed: ${coverage.updated_at ? new Date(coverage.updated_at).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" }) : "—"}</div>
+    </details>
+  `;
+}
+
+// ---------------------------------------------------------------------------
+// Sidebar filters (built from data)
+// ---------------------------------------------------------------------------
+
+function renderSidebar() {
+  // Count helpers
+  const countByPolicy = {};
+  const countByChannel = {};
+  const countByType = {};
+  const countBySpecies = { human: 0, animal: 0, na: 0 };
+
+  for (const r of allRecords) {
+    for (const area of (r.policy_area || ["general_measles"])) {
+      countByPolicy[area] = (countByPolicy[area] || 0) + 1;
+    }
+    const ch = r.channel || "news";
+    countByChannel[ch] = (countByChannel[ch] || 0) + 1;
+
+    const st = normType(r.source_type);
+    countByType[st] = (countByType[st] || 0) + 1;
+
+    const sp = r.species || "na";
+    if (sp in countBySpecies) countBySpecies[sp]++;
   }
 
-  if (!latest) return;
+  // Policy area (radio)
+  document.getElementById("f-policy").innerHTML = POLICY_AREAS.map(pa => `
+    <label class="radio-row ${state.policy === pa.id ? "on" : ""}">
+      <input type="radio" name="policy" value="${pa.id}" ${state.policy === pa.id ? "checked" : ""} />
+      <span class="rbox"></span>
+      ${pa.cdot ? `<span class="cdot" style="background:${pa.cdot}"></span>` : ""}
+      ${esc(pa.label)}
+      ${pa.id !== "all" ? `<span class="count">${(countByPolicy[pa.id] || 0).toLocaleString()}</span>` : ""}
+    </label>
+  `).join("");
 
-  text.textContent = latest.title || "(No title)";
-  link.href        = latest.url || "#";
-  link.style.display = latest.url ? "inline" : "none";
-  banner.classList.remove("hidden");
+  // Channel (checkbox)
+  document.getElementById("f-channel").innerHTML = CHANNELS.map(ch => {
+    const on = state.channels.has(ch.id);
+    const cnt = countByChannel[ch.id] || 0;
+    return `
+      <label class="choice ${on ? "on" : ""}">
+        <input type="checkbox" name="channel" value="${ch.id}" ${on ? "checked" : ""} />
+        <span class="box"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M2 6.2 5 9l5-6"/></svg></span>
+        <span class="cdot" style="background:${ch.cdot}"></span>
+        ${esc(ch.label)}
+        <span class="count">${cnt.toLocaleString()}</span>
+      </label>
+    `;
+  }).join("");
+
+  // Source type (checkbox — deduplicated)
+  const seenTypes = new Set();
+  const typeRows = [];
+  for (const [st, label] of [
+    ["journal_article", "Journal article"],
+    ["preprint", "Preprint"],
+    ["clinical_trial", "Clinical trial"],
+    ["guideline", "Guideline"],
+    ["surveillance", "Surveillance"],
+    ["outbreak_report", "Outbreak report"],
+    ["news", "News"],
+    ["press_release", "Press release"],
+  ]) {
+    // count both "journal" and "journal_article" under the same row
+    const normed = normType(st);
+    if (seenTypes.has(normed)) continue;
+    seenTypes.add(normed);
+    const on = state.types.has(normed);
+    const cnt = (countByType[normed] || 0);
+    typeRows.push(`
+      <label class="choice ${on ? "on" : ""}">
+        <input type="checkbox" name="source_type" value="${normed}" ${on ? "checked" : ""} />
+        <span class="box"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M2 6.2 5 9l5-6"/></svg></span>
+        <span class="cdot" style="background:${ST_DOT[st] || "var(--ink-muted)"}"></span>
+        ${esc(label)}
+        <span class="count">${cnt.toLocaleString()}</span>
+      </label>
+    `);
+  }
+  document.getElementById("f-type").innerHTML = typeRows.join("");
+
+  // Species (radio)
+  const speciesOpts = [
+    { id: "all", label: "All populations" },
+    { id: "human", label: "Human studies" },
+    { id: "animal", label: "Animal / preclinical" },
+  ];
+  document.getElementById("f-species").innerHTML = speciesOpts.map(sp => `
+    <label class="radio-row ${state.species === sp.id ? "on" : ""}">
+      <input type="radio" name="species" value="${sp.id}" ${state.species === sp.id ? "checked" : ""} />
+      <span class="rbox"></span>
+      ${esc(sp.label)}
+      ${sp.id !== "all" ? `<span class="count">${(countBySpecies[sp.id] || 0).toLocaleString()}</span>` : ""}
+    </label>
+  `).join("");
+
+  // Toggle states
+  document.querySelectorAll(".toggle-row").forEach(row => {
+    const key = row.dataset.toggle;
+    const isOn = key === "pregnancy" ? state.pregnancy : key === "canadian" ? state.canadian : false;
+    row.classList.toggle("on", isOn);
+  });
+
+  wireFilters();
+}
+
+// Normalise source_type to canonical key
+function normType(st) {
+  if (st === "journal" || st === "journal_article") return "journal_article";
+  return st || "other";
 }
 
 // ---------------------------------------------------------------------------
-// Coverage panel
+// Wire sidebar listeners
 // ---------------------------------------------------------------------------
 
-function renderCoveragePanel() {
-  const panel = document.getElementById("coverage-panel");
-  if (!coverage.channels) { panel.style.display = "none"; return; }
-
-  const updAt = coverage.updated_at
-    ? new Date(coverage.updated_at).toLocaleString("en-CA", {
-        dateStyle: "medium", timeStyle: "short",
-      })
-    : "—";
-
-  const channelChips = (coverage.channels || [])
-    .map(
-      (ch) =>
-        `<button class="coverage-chip" data-channel="${ch.id}" title="${ch.label}">
-           <span>${ch.icon || ""} ${ch.label}</span>
-           <span class="chip-count">${ch.count}</span>
-         </button>`
-    )
-    .join("");
-
-  const policyChips = (coverage.policy_areas || [])
-    .map(
-      (pa) =>
-        `<button class="policy-chip" data-area="${pa.id}"
-            title="${pa.label}">${pa.label} <strong>${pa.count}</strong></button>`
-    )
-    .join("");
-
-  panel.innerHTML = `
-    <p class="coverage-panel-title">Source coverage · ${updAt}</p>
-    <div class="coverage-chips" id="channel-chip-row">${channelChips}</div>
-    <div class="policy-area-row" id="policy-chip-row">${policyChips}</div>
-  `;
-
-  // Channel chip click → filter
-  panel.querySelectorAll(".coverage-chip").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const ch = btn.dataset.channel;
-      state.channel = state.channel === ch ? "all" : ch;
-      syncChannelRadio();
-      applyFiltersAndRender();
-      updateChipActive();
-    });
-  });
-
-  // Policy chip click → filter
-  panel.querySelectorAll(".policy-chip").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const area = btn.dataset.area;
-      if (state.policyArea === area) {
-        state.policyArea = "all";
-      } else {
-        state.policyArea = area;
-      }
-      syncPolicyRadio();
-      applyFiltersAndRender();
-    });
-  });
-}
-
-function updateChipActive() {
-  document.querySelectorAll(".coverage-chip").forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.channel === state.channel);
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Channel filter radio buttons (sidebar)
-// ---------------------------------------------------------------------------
-
-function renderChannelFilters() {
-  const group = document.getElementById("channel-filters");
-  const existing = group.querySelector(".filter-all").outerHTML;
-
-  const channels = coverage.channels || [];
-  const extras = channels.map(
-    (ch) =>
-      `<label class="filter-label">
-         <input type="radio" name="channel" value="${ch.id}" />
-         ${ch.icon || ""} ${ch.label}
-       </label>`
-  ).join("");
-
-  group.innerHTML = existing + extras;
-
-  // Re-attach radio listeners
-  group.querySelectorAll("input[type=radio]").forEach((r) => {
+function wireFilters() {
+  // Policy radio
+  document.querySelectorAll("input[name=policy]").forEach(r => {
     r.addEventListener("change", () => {
-      if (r.checked) {
-        state.channel = r.value;
-        updateChipActive();
-        applyFiltersAndRender();
-      }
+      if (r.checked) { state.policy = r.value; refreshAll(); }
+    });
+  });
+
+  // Channel checkboxes
+  document.querySelectorAll("input[name=channel]").forEach(cb => {
+    cb.addEventListener("change", () => {
+      if (cb.checked) state.channels.add(cb.value);
+      else state.channels.delete(cb.value);
+      refreshAll();
+    });
+  });
+
+  // Source type checkboxes
+  document.querySelectorAll("input[name=source_type]").forEach(cb => {
+    cb.addEventListener("change", () => {
+      if (cb.checked) state.types.add(cb.value);
+      else state.types.delete(cb.value);
+      refreshAll();
+    });
+  });
+
+  // Species radio
+  document.querySelectorAll("input[name=species]").forEach(r => {
+    r.addEventListener("change", () => {
+      if (r.checked) { state.species = r.value; refreshAll(); }
+    });
+  });
+
+  // Toggle rows
+  document.querySelectorAll(".toggle-row").forEach(row => {
+    row.addEventListener("click", () => {
+      const key = row.dataset.toggle;
+      if (key === "pregnancy") state.pregnancy = !state.pregnancy;
+      if (key === "canadian")  state.canadian  = !state.canadian;
+      row.classList.toggle("on", key === "pregnancy" ? state.pregnancy : state.canadian);
+      refreshAll();
+    });
+  });
+
+  // Date presets
+  document.querySelectorAll("#f-date button").forEach(btn => {
+    btn.addEventListener("click", () => {
+      state.days = btn.dataset.days;
+      document.querySelectorAll("#f-date button").forEach(b => b.classList.toggle("on", b === btn));
+      refreshAll();
     });
   });
 }
 
-function syncChannelRadio() {
-  document.querySelectorAll("input[name=channel]").forEach((r) => {
-    r.checked = r.value === state.channel;
-  });
-}
+// ---------------------------------------------------------------------------
+// Reset
+// ---------------------------------------------------------------------------
 
-function syncPolicyRadio() {
-  document.querySelectorAll("input[name=policy_area]").forEach((r) => {
-    r.checked = r.value === state.policyArea;
-  });
-}
+document.getElementById("clear-filters").addEventListener("click", () => {
+  state.search   = "";
+  state.policy   = "all";
+  state.channels = new Set();
+  state.types    = new Set();
+  state.species  = "all";
+  state.pregnancy = false;
+  state.canadian  = false;
+  state.days     = "all";
+  document.getElementById("search-input").value = "";
+  document.getElementById("sort-select").value = "date_desc";
+  state.sort = "date_desc";
+  document.querySelectorAll("#f-date button").forEach(b => b.classList.toggle("on", b.dataset.days === "all"));
+  renderSidebar();
+  refreshAll();
+});
 
 // ---------------------------------------------------------------------------
 // Filter + sort
 // ---------------------------------------------------------------------------
 
+function refreshAll() {
+  applyFiltersAndRender();
+  updateClearBtn();
+}
+
+function hasActiveFilters() {
+  return state.search || state.policy !== "all" || state.channels.size > 0 ||
+    state.types.size > 0 || state.species !== "all" || state.pregnancy ||
+    state.canadian || state.days !== "all";
+}
+
+function updateClearBtn() {
+  document.getElementById("clear-filters").disabled = !hasActiveFilters();
+  // Mobile filter count badge
+  const n = [
+    state.policy !== "all",
+    state.channels.size > 0,
+    state.types.size > 0,
+    state.species !== "all",
+    state.pregnancy,
+    state.canadian,
+    state.days !== "all",
+    !!state.search,
+  ].filter(Boolean).length;
+  const badge = document.getElementById("mobile-fcount");
+  badge.hidden = n === 0;
+  badge.textContent = n;
+}
+
 function applyFiltersAndRender() {
   const q = state.search.toLowerCase().trim();
 
-  filtered = allRecords.filter((r) => {
-    // Text search
+  // Compute date cutoff
+  let cutoff = null;
+  if (state.days !== "all") {
+    const d = new Date();
+    d.setDate(d.getDate() - Number(state.days));
+    cutoff = d.toISOString().slice(0, 10);
+  }
+
+  filtered = allRecords.filter(r => {
+    // Text
     if (q) {
-      const haystack = [
-        r.title, r.summary, r.authors, r.journal, r.source,
-      ].join(" ").toLowerCase();
-      if (!q.split(/\s+/).every((w) => haystack.includes(w))) return false;
+      const hay = [r.title, r.summary, r.authors, r.journal, r.source].join(" ").toLowerCase();
+      if (!q.split(/\s+/).every(w => hay.includes(w))) return false;
     }
 
-    // Policy area
-    if (state.policyArea !== "all") {
-      if (!Array.isArray(r.policy_area) || !r.policy_area.includes(state.policyArea)) return false;
+    // Policy (radio — single select)
+    if (state.policy !== "all") {
+      if (!Array.isArray(r.policy_area) || !r.policy_area.includes(state.policy)) return false;
     }
 
-    // Pregnancy toggle
-    if (state.pregnancy && !r.pregnancy_related) return false;
+    // Channel (multi — any match)
+    if (state.channels.size > 0 && !state.channels.has(r.channel)) return false;
 
-    // Channel
-    if (state.channel !== "all" && r.channel !== state.channel) return false;
-
-    // Source type
-    if (state.sourceType !== "all" && r.source_type !== state.sourceType) return false;
+    // Source type (multi — match normalised)
+    if (state.types.size > 0 && !state.types.has(normType(r.source_type))) return false;
 
     // Species
-    if (state.species !== "all") {
-      if (state.species === "human"  && r.species !== "human")  return false;
-      if (state.species === "animal" && r.species !== "animal") return false;
-    }
+    if (state.species !== "all" && r.species !== state.species) return false;
 
-    // Canadian
+    // Toggles
+    if (state.pregnancy && !r.pregnancy_related) return false;
     if (state.canadian && !r.canadian) return false;
 
-    // Date range
-    if (state.dateFrom && r.date && r.date < state.dateFrom) return false;
-    if (state.dateTo   && r.date && r.date > state.dateTo)   return false;
+    // Date cutoff
+    if (cutoff) {
+      const d = recDate(r);
+      if (!d || d < cutoff) return false;
+    }
 
     return true;
   });
 
-  // Sort
   filtered = sortRecords(filtered, state.sort);
-
   currentPage = 1;
   renderPage();
-  updateResultsCount();
+  renderTimeline();
+  renderCountLine();
+  updateClearBtn();
 }
 
 function sortRecords(records, sort) {
   const copy = [...records];
-  if (sort === "date_desc") return copy.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-  if (sort === "date_asc")  return copy.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  if (sort === "date_desc") return copy.sort((a, b) => (recDate(b) || "").localeCompare(recDate(a) || ""));
+  if (sort === "date_asc")  return copy.sort((a, b) => (recDate(a) || "").localeCompare(recDate(b) || ""));
   if (sort === "altmetric") return copy.sort((a, b) => (b.altmetric_score || 0) - (a.altmetric_score || 0));
   if (sort === "title")     return copy.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
   return copy;
+}
+
+// ---------------------------------------------------------------------------
+// Timeline chart
+// ---------------------------------------------------------------------------
+
+function renderTimeline() {
+  const el = document.getElementById("timeline");
+  if (filtered.length === 0) { el.hidden = true; return; }
+
+  // Bucket by month (last 24 months)
+  const months = {};
+  const now = new Date();
+  for (let i = 23; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    months[key] = 0;
+  }
+  for (const r of filtered) {
+    const d = recDate(r);
+    if (d && d.length >= 7) {
+      const key = d.slice(0, 7);
+      if (key in months) months[key]++;
+    }
+  }
+  const entries = Object.entries(months);
+  const max = Math.max(...entries.map(e => e[1]), 1);
+
+  document.getElementById("tl-chart").innerHTML = entries.map(([mon, cnt]) => {
+    const h = Math.round((cnt / max) * 100);
+    return `<div class="tl-bar" style="height:${Math.max(h, cnt > 0 ? 4 : 2)}%" title="${mon}: ${cnt}">
+      <span class="tip">${mon}<br>${cnt} record${cnt !== 1 ? "s" : ""}</span>
+    </div>`;
+  }).join("");
+
+  // Axis labels (every 6 months)
+  const axisKeys = entries.filter((_, i) => i % 6 === 0 || i === entries.length - 1).map(e => e[0]);
+  document.getElementById("tl-axis").innerHTML = `
+    <span>${axisKeys[0]}</span>
+    ${axisKeys.slice(1, -1).map(k => `<span>${k}</span>`).join("")}
+    <span>${axisKeys[axisKeys.length - 1]}</span>
+  `;
+  document.getElementById("tl-note").textContent = `${filtered.length} records`;
+  el.hidden = false;
+}
+
+// ---------------------------------------------------------------------------
+// Count line
+// ---------------------------------------------------------------------------
+
+function renderCountLine() {
+  const el = document.getElementById("count-line");
+  if (filtered.length === allRecords.length) {
+    el.innerHTML = `<b>${allRecords.length.toLocaleString()}</b> records`;
+  } else {
+    el.innerHTML = `<b>${filtered.length.toLocaleString()}</b> of ${allRecords.length.toLocaleString()} records`;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -295,88 +603,98 @@ function sortRecords(records, sort) {
 // ---------------------------------------------------------------------------
 
 function renderPage() {
-  const list  = document.getElementById("evidence-list");
+  const container = document.getElementById("cards");
   const start = (currentPage - 1) * PAGE_SIZE;
   const page  = filtered.slice(start, start + PAGE_SIZE);
 
   if (page.length === 0) {
-    list.innerHTML = `<div class="empty-state">
-      <div class="empty-icon">🔍</div>
-      <p>No records match your current filters.</p>
-    </div>`;
+    container.innerHTML = `
+      <div class="empty">
+        <div class="empty-icon">🔍</div>
+        <h3>No records found</h3>
+        <p>Try adjusting your filters.</p>
+      </div>`;
   } else {
-    list.innerHTML = page.map(renderCard).join("");
+    container.innerHTML = page.map(renderCard).join("");
+    // Expand / collapse
+    container.querySelectorAll(".card .more").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const card = btn.closest(".card");
+        const expanded = card.classList.toggle("expanded");
+        btn.textContent = expanded ? "Show less" : "Show more";
+      });
+    });
   }
-
   renderPagination();
 }
 
 function renderCard(rec) {
-  const primaryArea = Array.isArray(rec.policy_area) && rec.policy_area.length
-    ? rec.policy_area[0]
-    : "general_measles";
+  const date   = recDate(rec);
+  const stNorm = normType(rec.source_type);
+  const stLabel = rec.source_type_label || ST_LABEL[stNorm] || ST_LABEL[rec.source_type] || "Other";
+  const stDot  = ST_DOT[stNorm] || ST_DOT[rec.source_type] || "var(--ink-muted)";
 
-  const stLabel = SOURCE_TYPE_LABELS[rec.source_type] || rec.source_type || "Other";
-  const stClass = (rec.source_type || "").replace(/_/g, "_");
+  // Policy area badges (first two)
+  const areas = rec.policy_area || ["general_measles"];
+  const areaBadges = areas.slice(0, 2).map(a => {
+    const cls = `pa-${a.replace(/_/g, "-")}`;
+    const lbl = POLICY_AREAS.find(p => p.id === a)?.label || a;
+    return `<span class="badge ${cls}">${esc(lbl)}</span>`;
+  }).join("");
 
-  const dateStr = rec.date
-    ? new Date(rec.date).toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" })
-    : "";
-
-  const policyPills = (rec.policy_area || ["general_measles"])
-    .map((a) => `<span class="pill pill-policy" data-area="${a}">${
-      POLICY_AREAS.find((p) => p.id === a)?.label || a
-    }</span>`)
-    .join("");
-
-  const altmetric = rec.altmetric_score
-    ? `<span class="altmetric-badge">⚡ ${Math.round(rec.altmetric_score)}</span>`
-    : "";
-
+  // Flag badges
   const flags = [
-    rec.reviewed    ? `<span class="pill pill-reviewed">✓ Reviewed</span>` : "",
-    rec.canadian    ? `<span class="pill pill-canada">🍁 Canada</span>`    : "",
-    rec.pharma      ? `<span class="pill pill-pharma">Industry</span>`      : "",
-    rec.species === "animal" ? `<span class="pill pill-animal">Animal study</span>` : "",
+    rec.reviewed   ? `<span class="badge flag-reviewed">✓ Reviewed</span>` : "",
+    rec.canadian   ? `<span class="badge flag-canada">🍁 Canada</span>`    : "",
+    rec.pharma     ? `<span class="badge flag-pharma">Industry</span>`       : "",
+    rec.species === "animal" ? `<span class="badge flag-animal">Animal</span>` : "",
+    rec.pregnancy_related ? `<span class="badge flag-pregnancy">🤰 Pregnancy</span>` : "",
   ].filter(Boolean).join("");
 
-  const summary = rec.summary
-    ? `<div class="card-body"><p>${escHtml(rec.summary)}</p></div>`
+  const metaParts = [
+    rec.authors ? `<span class="src">${esc(rec.authors.split(",").slice(0, 2).join(", ") + (rec.authors.includes(",") ? " et al." : ""))}</span>` : "",
+    rec.journal ? `<span class="jrnl">${esc(rec.journal)}</span>` : "",
+    rec.source  && !rec.journal ? `<span>${esc(rec.source)}</span>` : "",
+  ].filter(Boolean).join("<span style='color:var(--hairline-strong)'> · </span>");
+
+  const altmetric = rec.altmetric_score
+    ? (() => {
+        const p = Math.min(Math.round(rec.altmetric_score / 200 * 100), 100);
+        return `<div class="altmetric" title="Altmetric score: ${Math.round(rec.altmetric_score)}">
+          <div class="donut" style="--p:${p}"><span>${Math.round(rec.altmetric_score)}</span></div>
+          <div class="amlabel"><b>Altmetric</b>attention score</div>
+        </div>`;
+      })()
     : "";
 
-  const sourceStr = [rec.authors, rec.journal || rec.source]
-    .filter(Boolean)
-    .join(" · ");
-
   return `
-  <article class="evidence-card" role="listitem">
-    <div class="card-accent" data-primary="${primaryArea}"></div>
-    <div class="card-title">
-      ${rec.url
-        ? `<a href="${escHtml(rec.url)}" target="_blank" rel="noopener">${escHtml(rec.title || "(No title)")}</a>`
-        : escHtml(rec.title || "(No title)")
-      }
-    </div>
-    <div class="card-meta">
-      <span class="card-date">${dateStr}</span>
-      ${altmetric}
-    </div>
-    ${summary}
-    <div class="card-footer">
-      <span class="pill pill-source-type ${stClass}">${stLabel}</span>
-      ${policyPills}
-      ${flags}
-      <span class="card-source">${escHtml(sourceStr)}</span>
-    </div>
-  </article>`;
-}
-
-function escHtml(str) {
-  return String(str || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    <article class="card" role="listitem">
+      <div class="row1">
+        <span class="badge type"><span class="bdot" style="background:${stDot}"></span>${esc(stLabel)}</span>
+        ${areaBadges}
+        ${flags}
+        <span class="spacer-x"></span>
+        <span class="date">${fmtDate(date)}</span>
+      </div>
+      <h3 class="title">
+        ${rec.url
+          ? `<a href="${esc(rec.url)}" target="_blank" rel="noopener">${esc(rec.title || "(No title)")}</a>`
+          : esc(rec.title || "(No title)")
+        }
+      </h3>
+      ${metaParts ? `<div class="meta">${metaParts}</div>` : ""}
+      ${rec.summary ? `<p class="summary">${esc(rec.summary)}</p>` : ""}
+      <div class="foot">
+        ${rec.summary && rec.summary.length > 280 ? `<button class="more" type="button">Show more</button>` : ""}
+        ${altmetric}
+        ${rec.url
+          ? `<a class="link-out" href="${esc(rec.url)}" target="_blank" rel="noopener">
+               Open ↗
+             </a>`
+          : ""
+        }
+      </div>
+    </article>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -384,32 +702,30 @@ function escHtml(str) {
 // ---------------------------------------------------------------------------
 
 function renderPagination() {
-  const total  = Math.ceil(filtered.length / PAGE_SIZE);
-  const pg     = document.getElementById("pagination");
-
+  const total = Math.ceil(filtered.length / PAGE_SIZE);
+  const pg    = document.getElementById("pagination");
   if (total <= 1) { pg.innerHTML = ""; return; }
 
-  const prev = `<button class="page-btn" id="page-prev" ${currentPage === 1 ? "disabled" : ""}>‹ Prev</button>`;
-  const next = `<button class="page-btn" id="page-next" ${currentPage === total ? "disabled" : ""}>Next ›</button>`;
-
-  const maxVisible = 7;
-  const half = Math.floor(maxVisible / 2);
+  const maxV = 7, half = Math.floor(maxV / 2);
   let start = Math.max(1, currentPage - half);
-  let end   = Math.min(total, start + maxVisible - 1);
-  if (end - start < maxVisible - 1) start = Math.max(1, end - maxVisible + 1);
+  let end   = Math.min(total, start + maxV - 1);
+  if (end - start < maxV - 1) start = Math.max(1, end - maxV + 1);
 
   let nums = "";
-  if (start > 1)     nums += `<button class="page-btn" data-page="1">1</button><span>…</span>`;
+  if (start > 1) nums += `<button class="page-btn" data-page="1">1</button><span>…</span>`;
   for (let p = start; p <= end; p++) {
     nums += `<button class="page-btn ${p === currentPage ? "active" : ""}" data-page="${p}">${p}</button>`;
   }
-  if (end < total)   nums += `<span>…</span><button class="page-btn" data-page="${total}">${total}</button>`;
+  if (end < total) nums += `<span>…</span><button class="page-btn" data-page="${total}">${total}</button>`;
 
-  pg.innerHTML = prev + nums + next;
-
+  pg.innerHTML = `
+    <button class="page-btn" id="page-prev" ${currentPage === 1 ? "disabled" : ""}>‹ Prev</button>
+    ${nums}
+    <button class="page-btn" id="page-next" ${currentPage === total ? "disabled" : ""}>Next ›</button>
+  `;
   pg.querySelector("#page-prev")?.addEventListener("click", () => goPage(currentPage - 1));
   pg.querySelector("#page-next")?.addEventListener("click", () => goPage(currentPage + 1));
-  pg.querySelectorAll("[data-page]").forEach((btn) =>
+  pg.querySelectorAll("[data-page]").forEach(btn =>
     btn.addEventListener("click", () => goPage(Number(btn.dataset.page)))
   );
 }
@@ -422,124 +738,57 @@ function goPage(p) {
 }
 
 // ---------------------------------------------------------------------------
-// Metadata chips in header
+// Updated stamp
 // ---------------------------------------------------------------------------
 
-function updateMeta() {
-  const updAt = coverage.updated_at
-    ? new Date(coverage.updated_at).toLocaleString("en-CA", {
-        dateStyle: "medium", timeStyle: "short",
-      })
-    : "—";
-  document.getElementById("updated-at").textContent = `Updated ${updAt}`;
-  document.getElementById("total-count").textContent = `${allRecords.length} records`;
-}
-
-function updateResultsCount() {
-  const el = document.getElementById("results-count");
-  el.textContent = filtered.length === allRecords.length
-    ? `${allRecords.length} records`
-    : `${filtered.length} of ${allRecords.length} records`;
+function renderUpdatedStamp() {
+  const el = document.getElementById("updated-stamp");
+  if (!coverage.updated_at) return;
+  const d = new Date(coverage.updated_at);
+  el.innerHTML = `Updated<br><b>${d.toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })}</b>`;
 }
 
 // ---------------------------------------------------------------------------
-// Event listeners
+// Mobile sidebar
 // ---------------------------------------------------------------------------
 
-function wireListeners() {
-  // Search (debounced)
-  let searchTimer;
-  document.getElementById("search-input").addEventListener("input", (e) => {
-    clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => {
-      state.search = e.target.value;
-      applyFiltersAndRender();
-    }, 280);
-  });
-
-  // Policy area radios
-  document.querySelectorAll("input[name=policy_area]").forEach((r) => {
-    r.addEventListener("change", () => {
-      if (r.checked) { state.policyArea = r.value; applyFiltersAndRender(); }
-    });
-  });
-
-  // Pregnancy toggle
-  document.getElementById("pregnancy-toggle").addEventListener("change", (e) => {
-    state.pregnancy = e.target.checked;
-    applyFiltersAndRender();
-  });
-
-  // Source type radios
-  document.querySelectorAll("input[name=source_type]").forEach((r) => {
-    r.addEventListener("change", () => {
-      if (r.checked) { state.sourceType = r.value; applyFiltersAndRender(); }
-    });
-  });
-
-  // Species radios
-  document.querySelectorAll("input[name=species]").forEach((r) => {
-    r.addEventListener("change", () => {
-      if (r.checked) { state.species = r.value; applyFiltersAndRender(); }
-    });
-  });
-
-  // Canadian toggle
-  document.getElementById("canadian-toggle").addEventListener("change", (e) => {
-    state.canadian = e.target.checked;
-    applyFiltersAndRender();
-  });
-
-  // Date range
-  document.getElementById("date-from").addEventListener("change", (e) => {
-    state.dateFrom = e.target.value;
-    applyFiltersAndRender();
-  });
-  document.getElementById("date-to").addEventListener("change", (e) => {
-    state.dateTo = e.target.value;
-    applyFiltersAndRender();
-  });
-
-  // Sort
-  document.getElementById("sort-select").addEventListener("change", (e) => {
-    state.sort = e.target.value;
-    applyFiltersAndRender();
-  });
-
-  // Reset
-  document.getElementById("reset-btn").addEventListener("click", () => {
-    Object.assign(state, {
-      search:     "",
-      policyArea: "all",
-      channel:    "all",
-      sourceType: "all",
-      species:    "all",
-      pregnancy:  false,
-      canadian:   false,
-      dateFrom:   "",
-      dateTo:     "",
-      sort:       "date_desc",
-    });
-    document.getElementById("search-input").value  = "";
-    document.getElementById("pregnancy-toggle").checked = false;
-    document.getElementById("canadian-toggle").checked  = false;
-    document.getElementById("date-from").value = "";
-    document.getElementById("date-to").value   = "";
-    document.getElementById("sort-select").value = "date_desc";
-    document.querySelectorAll("input[name=policy_area]").forEach((r) => { r.checked = r.value === "all"; });
-    document.querySelectorAll("input[name=channel]").forEach((r)     => { r.checked = r.value === "all"; });
-    document.querySelectorAll("input[name=source_type]").forEach((r) => { r.checked = r.value === "all"; });
-    document.querySelectorAll("input[name=species]").forEach((r)     => { r.checked = r.value === "all"; });
-    updateChipActive();
-    applyFiltersAndRender();
-  });
+document.getElementById("open-filters")?.addEventListener("click", () => {
+  document.getElementById("filters").classList.add("open");
+  document.getElementById("filters-backdrop").classList.add("open");
+  document.getElementById("open-filters").setAttribute("aria-expanded", "true");
+});
+document.getElementById("close-filters")?.addEventListener("click", closeSidebar);
+document.getElementById("filters-backdrop")?.addEventListener("click", closeSidebar);
+function closeSidebar() {
+  document.getElementById("filters").classList.remove("open");
+  document.getElementById("filters-backdrop").classList.remove("open");
+  document.getElementById("open-filters")?.setAttribute("aria-expanded", "false");
 }
+
+// ---------------------------------------------------------------------------
+// Sort select
+// ---------------------------------------------------------------------------
+
+document.getElementById("sort-select").addEventListener("change", e => {
+  state.sort = e.target.value;
+  applyFiltersAndRender();
+});
+
+// ---------------------------------------------------------------------------
+// Search (debounced)
+// ---------------------------------------------------------------------------
+
+let searchTimer;
+document.getElementById("search-input").addEventListener("input", e => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    state.search = e.target.value;
+    applyFiltersAndRender();
+  }, 280);
+});
 
 // ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
 
-document.addEventListener("DOMContentLoaded", () => {
-  wireListeners();
-  loadData();
-});
+loadData();

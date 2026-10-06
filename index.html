@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Measles Evidence Watch — PHAC / NACI</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+</head>
+<body>
+
+<!-- ===== HEADER ===== -->
+<header class="site-header">
+  <div class="header-inner">
+    <div class="header-brand">
+      <span class="brand-icon" aria-hidden="true">🔴</span>
+      <div>
+        <h1 class="brand-title">Measles Evidence Watch</h1>
+        <p class="brand-sub">PHAC / NACI Technical Evidence Monitor</p>
+      </div>
+    </div>
+    <div class="header-meta">
+      <span id="updated-at" class="meta-chip">Loading…</span>
+      <span id="total-count" class="meta-chip">0 records</span>
+    </div>
+  </div>
+</header>
+
+<!-- ===== SITUATION BANNER ===== -->
+<div id="situation-banner" class="situation-banner hidden" role="status" aria-live="polite">
+  <span class="situation-label">Latest signal</span>
+  <span id="situation-text" class="situation-text"></span>
+  <a id="situation-link" class="situation-link" href="#" target="_blank" rel="noopener">↗</a>
+</div>
+
+<!-- ===== MAIN LAYOUT ===== -->
+<div class="layout">
+
+  <!-- === SIDEBAR === -->
+  <aside class="filters" aria-label="Filters">
+
+    <!-- Search -->
+    <section class="filter-section">
+      <h2 class="filter-heading">Search</h2>
+      <input
+        id="search-input"
+        class="search-input"
+        type="search"
+        placeholder="Keywords, author, journal…"
+        aria-label="Search evidence records"
+        autocomplete="off"
+      />
+    </section>
+
+    <!-- Policy area -->
+    <section class="filter-section">
+      <h2 class="filter-heading">Policy area</h2>
+      <div class="filter-group" id="policy-area-filters">
+        <label class="filter-label filter-all">
+          <input type="radio" name="policy_area" value="all" checked />
+          All areas
+        </label>
+        <label class="filter-label">
+          <input type="radio" name="policy_area" value="pregnancy_mmr" />
+          MMR in pregnancy
+        </label>
+        <label class="filter-label">
+          <input type="radio" name="policy_area" value="pregnancy_infection" />
+          Measles/rubella infection in pregnancy
+        </label>
+        <label class="filter-label">
+          <input type="radio" name="policy_area" value="schedule_timing" />
+          Second-dose timing
+        </label>
+        <label class="filter-label">
+          <input type="radio" name="policy_area" value="general_measles" />
+          General measles
+        </label>
+      </div>
+    </section>
+
+    <!-- Pregnancy toggle -->
+    <section class="filter-section">
+      <h2 class="filter-heading">Pregnancy focus</h2>
+      <label class="toggle-label">
+        <input type="checkbox" id="pregnancy-toggle" />
+        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        Pregnancy-related only
+      </label>
+    </section>
+
+    <!-- Channel -->
+    <section class="filter-section">
+      <h2 class="filter-heading">Channel</h2>
+      <div class="filter-group" id="channel-filters">
+        <label class="filter-label filter-all">
+          <input type="radio" name="channel" value="all" checked />
+          All channels
+        </label>
+        <!-- populated by app.js from coverage.json -->
+      </div>
+    </section>
+
+    <!-- Source type -->
+    <section class="filter-section">
+      <h2 class="filter-heading">Source type</h2>
+      <div class="filter-group" id="source-type-filters">
+        <label class="filter-label filter-all">
+          <input type="radio" name="source_type" value="all" checked />
+          All types
+        </label>
+        <label class="filter-label">
+          <input type="radio" name="source_type" value="journal" />
+          Journal articles
+        </label>
+        <label class="filter-label">
+          <input type="radio" name="source_type" value="preprint" />
+          Preprints
+        </label>
+        <label class="filter-label">
+          <input type="radio" name="source_type" value="clinical_trial" />
+          Clinical trials
+        </label>
+        <label class="filter-label">
+          <input type="radio" name="source_type" value="guideline" />
+          Guidelines
+        </label>
+        <label class="filter-label">
+          <input type="radio" name="source_type" value="surveillance" />
+          Surveillance
+        </label>
+        <label class="filter-label">
+          <input type="radio" name="source_type" value="outbreak_report" />
+          Outbreak reports
+        </label>
+        <label class="filter-label">
+          <input type="radio" name="source_type" value="news" />
+          News
+        </label>
+      </div>
+    </section>
+
+    <!-- Species -->
+    <section class="filter-section">
+      <h2 class="filter-heading">Study population</h2>
+      <div class="filter-group">
+        <label class="filter-label filter-all">
+          <input type="radio" name="species" value="all" checked />
+          All
+        </label>
+        <label class="filter-label">
+          <input type="radio" name="species" value="human" />
+          Human studies
+        </label>
+        <label class="filter-label">
+          <input type="radio" name="species" value="animal" />
+          Animal / preclinical
+        </label>
+      </div>
+    </section>
+
+    <!-- Canadian -->
+    <section class="filter-section">
+      <label class="toggle-label">
+        <input type="checkbox" id="canadian-toggle" />
+        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        Canadian evidence only
+      </label>
+    </section>
+
+    <!-- Date range -->
+    <section class="filter-section">
+      <h2 class="filter-heading">Date range</h2>
+      <div class="date-range">
+        <label class="date-label" for="date-from">From</label>
+        <input type="date" id="date-from" class="date-input" />
+        <label class="date-label" for="date-to">To</label>
+        <input type="date" id="date-to" class="date-input" />
+      </div>
+    </section>
+
+    <!-- Reset -->
+    <section class="filter-section">
+      <button id="reset-btn" class="reset-btn">Reset all filters</button>
+    </section>
+
+  </aside>
+
+  <!-- === MAIN CONTENT === -->
+  <main class="main-content" id="main-content">
+
+    <!-- Coverage panel -->
+    <section class="coverage-panel" id="coverage-panel" aria-label="Source coverage">
+      <!-- populated by app.js -->
+    </section>
+
+    <!-- Sort / results header -->
+    <div class="results-header">
+      <p class="results-count" id="results-count" aria-live="polite">Loading…</p>
+      <div class="sort-controls">
+        <label for="sort-select" class="sort-label">Sort by</label>
+        <select id="sort-select" class="sort-select">
+          <option value="date_desc">Date (newest first)</option>
+          <option value="date_asc">Date (oldest first)</option>
+          <option value="altmetric">Altmetric score</option>
+          <option value="title">Title (A–Z)</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Evidence cards -->
+    <div id="evidence-list" class="evidence-list" role="list" aria-label="Evidence records">
+      <p class="loading-msg">Loading evidence…</p>
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination" id="pagination" aria-label="Pagination"></div>
+
+  </main>
+
+</div><!-- /layout -->
+
+<!-- ===== FOOTER ===== -->
+<footer class="site-footer">
+  <p>
+    Measles Evidence Watch · Maintained by PHAC / NACI Technical Lead
+    · Data refreshed daily via GitHub Actions
+    · <a href="https://github.com/phac-aspc/measles-evidence-dashboard" target="_blank" rel="noopener">GitHub</a>
+  </p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

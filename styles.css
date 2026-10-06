@@ -1,0 +1,510 @@
+/* =========================================================
+   Measles Evidence Watch — styles
+   Brand colour: amber #b45309  (distinct from Ebola blue)
+   ========================================================= */
+
+/* ---------- Reset / base ---------- */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --brand:          #b45309;   /* amber-700 */
+  --brand-light:    #fef3c7;   /* amber-100 */
+  --brand-mid:      #d97706;   /* amber-600 */
+  --brand-dark:     #92400e;   /* amber-800 */
+  --text:           #1f2937;
+  --text-muted:     #6b7280;
+  --border:         #e5e7eb;
+  --surface:        #ffffff;
+  --surface-alt:    #f9fafb;
+  --sidebar-w:      260px;
+  --header-h:       60px;
+  --radius:         6px;
+  --shadow-sm:      0 1px 3px rgba(0,0,0,.08);
+  --shadow-md:      0 4px 12px rgba(0,0,0,.10);
+  --font:           'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono:      'Cascadia Code', 'Consolas', monospace;
+
+  /* policy-area pill colours */
+  --pa-pregnancy-mmr:       #7c3aed;   /* violet */
+  --pa-pregnancy-infection: #db2777;   /* pink */
+  --pa-schedule-timing:     #0891b2;   /* cyan */
+  --pa-general-measles:     #059669;   /* emerald */
+}
+
+html { font-size: 15px; }
+body {
+  font-family: var(--font);
+  color: var(--text);
+  background: var(--surface-alt);
+  min-height: 100vh;
+}
+
+a { color: var(--brand); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ---------- Site header ---------- */
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--brand);
+  color: #fff;
+  box-shadow: var(--shadow-md);
+  height: var(--header-h);
+}
+.header-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 1.25rem;
+  height: 100%;
+}
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+}
+.brand-icon  { font-size: 1.5rem; line-height: 1; }
+.brand-title { font-size: 1.1rem; font-weight: 700; letter-spacing: -.01em; }
+.brand-sub   { font-size: .75rem; opacity: .85; margin-top: 1px; }
+.header-meta { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+.meta-chip {
+  font-size: .72rem;
+  background: rgba(255,255,255,.18);
+  border: 1px solid rgba(255,255,255,.3);
+  border-radius: 12px;
+  padding: 2px 10px;
+  white-space: nowrap;
+  color: #fff;
+}
+
+/* ---------- Situation banner ---------- */
+.situation-banner {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  background: #fff7ed;
+  border-bottom: 2px solid var(--brand-mid);
+  padding: .55rem 1.25rem;
+  font-size: .82rem;
+  max-width: 100%;
+}
+.situation-banner.hidden { display: none; }
+.situation-label {
+  font-weight: 700;
+  color: var(--brand-dark);
+  white-space: nowrap;
+  text-transform: uppercase;
+  font-size: .7rem;
+  letter-spacing: .04em;
+}
+.situation-text { color: var(--text); flex: 1; line-height: 1.4; }
+.situation-link { color: var(--brand); font-weight: 600; white-space: nowrap; }
+
+/* ---------- Layout ---------- */
+.layout {
+  display: flex;
+  max-width: 1400px;
+  margin: 0 auto;
+  gap: 0;
+  min-height: calc(100vh - var(--header-h));
+}
+
+/* ---------- Sidebar ---------- */
+.filters {
+  width: var(--sidebar-w);
+  flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 1rem .85rem 2rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  max-height: calc(100vh - var(--header-h));
+  position: sticky;
+  top: var(--header-h);
+  align-self: flex-start;
+}
+
+.filter-section { margin-bottom: 1.15rem; }
+.filter-heading {
+  font-size: .68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-muted);
+  margin-bottom: .45rem;
+  padding-bottom: .2rem;
+  border-bottom: 1px solid var(--border);
+}
+.filter-group { display: flex; flex-direction: column; gap: .15rem; }
+.filter-label {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  font-size: .8rem;
+  cursor: pointer;
+  padding: .25rem .3rem;
+  border-radius: var(--radius);
+  transition: background .12s;
+}
+.filter-label:hover { background: var(--surface-alt); }
+.filter-label input[type="radio"],
+.filter-label input[type="checkbox"] { accent-color: var(--brand); cursor: pointer; }
+
+/* Search input */
+.search-input {
+  width: 100%;
+  padding: .4rem .6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: .82rem;
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+  transition: border-color .15s;
+}
+.search-input:focus { border-color: var(--brand); box-shadow: 0 0 0 2px rgba(180,83,9,.12); }
+
+/* Toggle switch */
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  font-size: .8rem;
+  cursor: pointer;
+}
+.toggle-label input[type="checkbox"] { display: none; }
+.toggle-track {
+  position: relative;
+  width: 34px;
+  height: 18px;
+  background: #d1d5db;
+  border-radius: 9px;
+  transition: background .2s;
+  flex-shrink: 0;
+}
+.toggle-thumb {
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 14px; height: 14px;
+  background: #fff;
+  border-radius: 50%;
+  transition: left .2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,.2);
+}
+.toggle-label input:checked + .toggle-track { background: var(--brand); }
+.toggle-label input:checked + .toggle-track .toggle-thumb { left: 18px; }
+
+/* Date range */
+.date-range { display: grid; grid-template-columns: auto 1fr; gap: .3rem .5rem; align-items: center; }
+.date-label { font-size: .75rem; color: var(--text-muted); }
+.date-input {
+  padding: .3rem .4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: .78rem;
+  color: var(--text);
+  width: 100%;
+  outline: none;
+}
+.date-input:focus { border-color: var(--brand); }
+
+/* Reset button */
+.reset-btn {
+  width: 100%;
+  padding: .4rem;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: .78rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.reset-btn:hover { background: var(--surface-alt); color: var(--text); }
+
+/* ---------- Main content ---------- */
+.main-content {
+  flex: 1;
+  min-width: 0;
+  padding: 1rem 1.25rem 2rem;
+}
+
+/* ---------- Coverage panel ---------- */
+.coverage-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .85rem 1rem;
+  margin-bottom: 1rem;
+}
+.coverage-panel-title {
+  font-size: .68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-muted);
+  margin-bottom: .6rem;
+}
+.coverage-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+}
+.coverage-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  padding: .25rem .65rem;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: .75rem;
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+.coverage-chip:hover { background: var(--brand-light); border-color: var(--brand); }
+.coverage-chip.active { background: var(--brand-light); border-color: var(--brand); color: var(--brand-dark); font-weight: 600; }
+.coverage-chip .chip-count { color: var(--text-muted); font-size: .7rem; }
+.coverage-chip.active .chip-count { color: var(--brand); }
+
+/* Policy area coverage row */
+.policy-area-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  margin-top: .5rem;
+  padding-top: .5rem;
+  border-top: 1px solid var(--border);
+}
+.policy-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  padding: .2rem .55rem;
+  border-radius: 10px;
+  font-size: .7rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1.5px solid transparent;
+  transition: opacity .12s;
+}
+.policy-chip:hover { opacity: .8; }
+.policy-chip[data-area="pregnancy_mmr"]       { background: #ede9fe; color: #5b21b6; border-color: #c4b5fd; }
+.policy-chip[data-area="pregnancy_infection"] { background: #fce7f3; color: #9d174d; border-color: #fbcfe8; }
+.policy-chip[data-area="schedule_timing"]     { background: #ecfeff; color: #0e7490; border-color: #a5f3fc; }
+.policy-chip[data-area="general_measles"]     { background: #d1fae5; color: #065f46; border-color: #6ee7b7; }
+
+/* ---------- Results header ---------- */
+.results-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: .75rem;
+  flex-wrap: wrap;
+  gap: .5rem;
+}
+.results-count { font-size: .82rem; color: var(--text-muted); }
+.sort-controls  { display: flex; align-items: center; gap: .45rem; }
+.sort-label     { font-size: .78rem; color: var(--text-muted); }
+.sort-select {
+  padding: .3rem .5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: .78rem;
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+  cursor: pointer;
+}
+.sort-select:focus { border-color: var(--brand); }
+
+/* ---------- Evidence cards ---------- */
+.evidence-list { display: flex; flex-direction: column; gap: .65rem; }
+.loading-msg   { color: var(--text-muted); font-size: .9rem; padding: 2rem 0; text-align: center; }
+
+.evidence-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .85rem 1rem;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow .15s, border-color .15s;
+  display: grid;
+  grid-template-areas:
+    "badge  title  meta"
+    ".      body   body"
+    ".      footer footer";
+  grid-template-columns: 3px 1fr auto;
+  gap: 0 .75rem;
+}
+.evidence-card:hover { box-shadow: var(--shadow-md); border-color: #d1d5db; }
+
+/* Left accent bar (policy area colour) */
+.card-accent {
+  grid-area: badge;
+  width: 3px;
+  border-radius: 2px;
+  align-self: stretch;
+}
+.card-accent[data-primary="pregnancy_mmr"]       { background: var(--pa-pregnancy-mmr); }
+.card-accent[data-primary="pregnancy_infection"] { background: var(--pa-pregnancy-infection); }
+.card-accent[data-primary="schedule_timing"]     { background: var(--pa-schedule-timing); }
+.card-accent[data-primary="general_measles"]     { background: var(--pa-general-measles); }
+
+.card-title {
+  grid-area: title;
+  font-size: .88rem;
+  font-weight: 600;
+  line-height: 1.35;
+  margin-bottom: .25rem;
+}
+.card-title a { color: var(--text); }
+.card-title a:hover { color: var(--brand); text-decoration: underline; }
+
+.card-meta {
+  grid-area: meta;
+  text-align: right;
+  font-size: .72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: .25rem;
+}
+.card-date    { font-weight: 500; }
+.altmetric-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .2rem;
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+  padding: 2px 7px;
+  font-size: .68rem;
+  font-weight: 700;
+}
+
+.card-body {
+  grid-area: body;
+  font-size: .8rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: .45rem;
+}
+.card-body p { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+.card-footer {
+  grid-area: footer;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .35rem;
+  margin-top: .1rem;
+}
+
+/* Pills */
+.pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: .68rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.pill-source-type {
+  background: #f3f4f6;
+  color: #374151;
+  border-color: #d1d5db;
+}
+.pill-source-type.surveillance  { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
+.pill-source-type.guideline     { background: #eff6ff; color: #1e40af; border-color: #bfdbfe; }
+.pill-source-type.preprint      { background: #faf5ff; color: #6b21a8; border-color: #e9d5ff; }
+.pill-source-type.clinical_trial { background: #f0fdf4; color: #166534; border-color: #bbf7d0; }
+.pill-source-type.outbreak_report { background: #fff1f2; color: #881337; border-color: #fecdd3; }
+
+.pill-policy {
+  font-size: .65rem;
+  font-weight: 600;
+}
+.pill-policy[data-area="pregnancy_mmr"]       { background: #ede9fe; color: #5b21b6; border-color: #c4b5fd; }
+.pill-policy[data-area="pregnancy_infection"] { background: #fce7f3; color: #9d174d; border-color: #fbcfe8; }
+.pill-policy[data-area="schedule_timing"]     { background: #ecfeff; color: #0e7490; border-color: #a5f3fc; }
+.pill-policy[data-area="general_measles"]     { background: #d1fae5; color: #065f46; border-color: #6ee7b7; }
+
+.pill-canada { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+.pill-reviewed { background: #f0fdf4; color: #15803d; border-color: #86efac; }
+.pill-pharma   { background: #fff7ed; color: #c2410c; border-color: #fed7aa; font-style: italic; }
+.pill-animal   { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+
+.card-source { font-size: .72rem; color: var(--text-muted); margin-left: auto; }
+
+/* ---------- Pagination ---------- */
+.pagination {
+  display: flex;
+  justify-content: center;
+  gap: .35rem;
+  margin-top: 1.25rem;
+  flex-wrap: wrap;
+}
+.page-btn {
+  padding: .35rem .7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: .78rem;
+  cursor: pointer;
+  color: var(--text);
+  transition: background .12s, border-color .12s;
+}
+.page-btn:hover:not(:disabled) { background: var(--brand-light); border-color: var(--brand); color: var(--brand-dark); }
+.page-btn.active { background: var(--brand); color: #fff; border-color: var(--brand); font-weight: 700; }
+.page-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ---------- Footer ---------- */
+.site-footer {
+  text-align: center;
+  font-size: .73rem;
+  color: var(--text-muted);
+  padding: 1.25rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.site-footer a { color: var(--brand); }
+
+/* ---------- Empty / error states ---------- */
+.empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--text-muted);
+}
+.empty-state .empty-icon { font-size: 2.5rem; margin-bottom: .75rem; }
+.empty-state p { font-size: .9rem; }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 768px) {
+  :root { --sidebar-w: 100%; }
+  .layout { flex-direction: column; }
+  .filters {
+    position: static;
+    width: 100%;
+    max-height: none;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    overflow: visible;
+  }
+  .evidence-card {
+    grid-template-areas:
+      "badge title"
+      ".     body"
+      ".     footer";
+    grid-template-columns: 3px 1fr;
+  }
+  .card-meta { display: none; }
+  .brand-sub { display: none; }
+}

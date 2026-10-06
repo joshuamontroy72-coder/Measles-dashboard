@@ -249,12 +249,19 @@ a:hover { text-decoration: underline; }
 .filters {
   position: sticky; top: 78px; background: var(--surface);
   border: 1px solid var(--hairline); border-radius: var(--radius);
-  box-shadow: var(--shadow); overflow-y: auto;
+  box-shadow: var(--shadow); overflow: hidden;
   max-height: calc(100vh - 98px);
+  display: flex; flex-direction: column;
 }
 .filters-head {
   padding: 13px 16px; border-bottom: 1px solid var(--hairline);
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  flex-shrink: 0;
+}
+.filters-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  flex: 1 1 auto;
 }
 .filters-head h2 {
   font-size: 12px; margin: 0; text-transform: uppercase;

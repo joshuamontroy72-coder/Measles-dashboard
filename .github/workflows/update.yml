@@ -1,0 +1,66 @@
+name: Update Measles Evidence
+
+on:
+  schedule:
+    # 11:23 UTC daily (jittered off the hour to reduce server load)
+    - cron: "23 11 * * *"
+  workflow_dispatch:          # allow manual runs from the Actions tab
+    inputs:
+      full_rebuild:
+        description: "Full rebuild (re-fetch all, ignore existing evidence.json)"
+        required: false
+        default: "false"
+        type: boolean
+
+permissions:
+  contents: write             # needed to push data/*.json back to repo
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pipeline dependencies
+        run: pip install -r pipeline/requirements.txt
+
+      - name: Seed evidence (first run only — skips if data already exists)
+        working-directory: pipeline
+        run: python build_seed.py
+        env:
+          NCBI_API_KEY:      ${{ secrets.NCBI_API_KEY }}
+          ALTMETRIC_API_KEY: ${{ secrets.ALTMETRIC_API_KEY }}
+          CONTACT_EMAIL:     ${{ secrets.CONTACT_EMAIL }}
+
+      - name: Run pipeline
+        working-directory: pipeline
+        run: |
+          if [ "${{ github.event.inputs.full_rebuild }}" = "true" ]; then
+            python update.py --full
+          else
+            python update.py
+          fi
+        env:
+          NCBI_API_KEY:      ${{ secrets.NCBI_API_KEY }}
+          ALTMETRIC_API_KEY: ${{ secrets.ALTMETRIC_API_KEY }}
+          CONTACT_EMAIL:     ${{ secrets.CONTACT_EMAIL }}
+
+      - name: Commit and push data files
+        run: |
+          git config user.name  "Measles Evidence Bot"
+          git config user.email "measles-dashboard@phac-aspc.gc.ca"
+          git add data/evidence.json data/coverage.json
+          git diff --cached --quiet || git commit -m "chore: daily evidence update [skip ci]"
+          git push
+
+      - name: Run classify unit tests
+        working-directory: pipeline
+        run: python -m pytest test_classify.py -v

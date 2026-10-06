@@ -164,7 +164,7 @@ function renderKPIs() {
   const pregnancy = allRecords.filter(r => r.pregnancy_related).length;
   const canadian  = allRecords.filter(r => r.canadian).length;
   const nitag     = allRecords.filter(r => r.channel === "who_sage" || r.channel === "nitag").length;
-  const epi       = allRecords.filter(r => r.channel === "surveillance" && isTrustedEpiSource(r)).length;
+  const epi       = allRecords.filter(r => r.channel === "surveillance" && !isJournalPublisher(r)).length;
   const journals  = allRecords.filter(r => normType(r.source_type) === "journal_article").length;
 
   const tiles = [
@@ -192,31 +192,49 @@ function renderKPIs() {
 // Situation banner
 // ---------------------------------------------------------------------------
 
-// Trusted epi agencies for situation banner
-const EPI_SOURCES = [
-  "phac", "aspc", "public health agency", "canada communicable disease",
-  "who", "world health organization", "paho",
-  "cdc", "centers for disease control", "mmwr",
-  "ecdc", "european centre for disease",
-  "public health ontario", "pho",
-  "public health england", "ukhsa",
-  "surveillance", "outbreak", "epidemiol",
+// Keywords that identify trusted epi/public-health agencies
+const EPI_AGENCIES = [
+  "phac", "aspc", "canada communicable disease", "ccdr",
+  "who.int", "world health organization", "paho",
+  "cdc.gov", "centers for disease control", "mmwr",
+  "ecdc.europa.eu", "european centre for disease",
+  "public health ontario", "publichealthontario",
+  "ukhsa", "public health england",
+  "reliefweb", "promed", "healthmap",
 ];
 
-function isTrustedEpiSource(r) {
-  const haystack = [r.source, r.journal, r.authors, r.title, r.url].join(" ").toLowerCase();
-  return EPI_SOURCES.some(k => haystack.includes(k));
+// Publishers whose articles should never surface in the situation banner
+const JOURNAL_PUBLISHERS = [
+  "thieme", "elsevier", "springer", "wiley", "tandfonline",
+  "nature.com", "sciencedirect", "nejm.org", "bmj.com",
+  "jamanetwork", "thelancet", "oup.com", "sagepub", "karger",
+  "cambridge.org/core", "journals.lww", "plos", "pubmed.ncbi",
+  "ncbi.nlm.nih.gov",
+];
+
+function isEpiAgencySource(r) {
+  const hay = [r.source, r.journal, r.authors, r.url].join(" ").toLowerCase();
+  return EPI_AGENCIES.some(k => hay.includes(k));
+}
+
+function isJournalPublisher(r) {
+  const url = (r.url || "").toLowerCase();
+  return JOURNAL_PUBLISHERS.some(d => url.includes(d));
 }
 
 function renderSituation() {
   const slot = document.getElementById("situation-slot");
 
-  // Prefer records in the surveillance channel from a trusted agency
+  // Strict: surveillance channel + known agency + not a journal publisher
   const latest =
-    allRecords.find(r => r.channel === "surveillance" && isTrustedEpiSource(r)) ||
-    allRecords.find(r => r.channel === "surveillance") ||
+    allRecords.find(r =>
+      r.channel === "surveillance" && isEpiAgencySource(r) && !isJournalPublisher(r)
+    ) ||
+    allRecords.find(r =>
+      r.channel === "surveillance" && !isJournalPublisher(r)
+    ) ||
     allRecords.find(r => r.channel === "who_sage") ||
-    allRecords.find(r => r.channel === "nitag" && isTrustedEpiSource(r));
+    null;
 
   if (!latest) { slot.innerHTML = ""; return; }
 
